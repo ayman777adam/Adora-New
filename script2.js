@@ -2087,6 +2087,7 @@
             }
             
             // إظهار النافذة فوراً
+                confirmYesBtn.disabled = false;
             confirmModal.style.display = 'flex';
             confirmModal.style.zIndex = '10000';
             
@@ -2935,7 +2936,7 @@
                     }
                     
                     // إضافة إلى appState.rooms محلياً
-                    appState.rooms.push(roomFromRequest);
+                    
                     activeRooms.push(roomFromRequest);
                 } else {
                     // إذا كانت الغرفة موجودة، أضفها إلى activeRooms إذا لم تكن موجودة
@@ -4940,7 +4941,7 @@ function renderMaintenanceCards() {
                     }
                     
                     // إضافة إلى appState.rooms
-                    appState.rooms.push(room);
+                    
                 }
             }
             
