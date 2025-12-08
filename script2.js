@@ -3541,27 +3541,6 @@ function renderGuestRequests() {
     }
 }
 
-    // عرض الطلبات المجدولة
-    const schedContainer = document.getElementById('scheduled-requests-container');
-    if (schedContainer) {
-        if (scheduledReqs.length) {
-            schedContainer.style.display = 'block';
-            schedContainer.innerHTML =
-                        `<div class="section-title">📅 ${t('scheduledRequests')}</div>` +
-                scheduledReqs.map(req => createRequestCard(req)).join('');
-        } else {
-            schedContainer.style.display = 'none';
-        }
-    }
-
-    // ظهور / إخفاء الأرشيف
-    if (archiveContainer) {
-        archiveContainer.style.display = isArchiveOpen ? 'block' : 'none';
-        if (isArchiveOpen) {
-            renderGuestRequestsArchive();
-        }
-    }
-}
 // تم حذف وظائف الأرشيف - تم نقلها إلى نظام التقارير
 
 // ===============================================
