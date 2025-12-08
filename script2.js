@@ -3488,7 +3488,9 @@ async function showRoomQuickInfo(id) {
 
 function renderGuestRequests() {
     // فصل طلبات النظافة (roomTracking = true) عن باقي الطلبات
-    const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && (!r.roomTracking || r.requestType !== 'cleaning'));
+        // تعديل: استبعاد طلبات النظافة تماماً من هذه القائمة لأنها تظهر في قسم تتبع الغرف
+    const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType !== 'cleaning');
+    const scheduledReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType !== 'cleaning');
     const scheduledReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && (!r.roomTracking || r.requestType !== 'cleaning'));
     const archiveReqs = appState.guestRequestsLog || [];
     
