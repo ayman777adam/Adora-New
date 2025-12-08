@@ -3487,6 +3487,10 @@ async function showRoomQuickInfo(id) {
         window.showRequestDetails = showRequestDetails;
 
 
+        }
+    }
+}
+
 function renderGuestRequests() {
     // تعديل: استبعاد طلبات النظافة تماماً من هذه القائمة لأنها تظهر في قسم تتبع الغرف
     const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType !== 'cleaning');
@@ -3496,10 +3500,6 @@ function renderGuestRequests() {
     
     const archiveReqs = appState.guestRequestsLog || [];
     
-    // تعريف طلبات النظافة (للاستخدام الداخلي أو في أقسام أخرى)
-    const activeCleaningReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType === 'cleaning' && r.roomTracking);
-    const scheduledCleaningReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType === 'cleaning' && r.roomTracking);
-
     const requestSection = document.getElementById('guest-requests-section');
     const archiveContainer = document.getElementById('req-archive-container');
 
@@ -3543,8 +3543,8 @@ function renderGuestRequests() {
     }
 }
 
-
 // تم حذف وظائف الأرشيف - تم نقلها إلى نظام التقارير
+
 
 // ===============================================
 // == دالة renderMaintenanceCards الكاملة =========
