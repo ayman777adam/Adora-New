@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>بوابة النزيل | Adora</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800&display=swap" rel="stylesheet">
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-storage.js"></script>
+    <link rel="stylesheet" href="guest.css">
+</head>
+<body class="guest-body" id="guest-body">
+    <!-- Welcome/Login Screen -->
+    <div id="guest-welcome-screen" class="guest-welcome-screen">
+        <div class="guest-welcome-content">
+            <div class="guest-welcome-logo">🏨</div>
+            <h1 class="guest-welcome-title">مرحباً بك في</h1>
+            <h2 class="guest-welcome-brand">منظومة Adora</h2>
+            <p class="guest-welcome-subtitle">نقدم لك تجربة إقامة استثنائية</p>
+            
+            <div class="guest-welcome-form">
+                <div class="guest-form-group">
+                    <label class="guest-form-label">🏠 رقم الغرفة</label>
+                    <input type="text" id="guest-welcome-room" class="guest-form-input" placeholder="سيتم ملؤه تلقائياً" readonly>
+                </div>
+                
+                <div class="guest-form-group">
+                    <label class="guest-form-label" style="color: #DC2626;">👤 الهوية الوطنية أو رقم الجوال</label>
+                    <input type="text" id="guest-welcome-identity" class="guest-form-input" placeholder="أدخل رقم الهوية أو الجوال المعتمد في الحجز" autocomplete="off" onkeypress="if(event.key === 'Enter') { window.proceedToGuestPortal(); }">
+                    <p class="guest-form-hint">
+                        الخدمة متاحة للنزلاء فقط… نرجو إدخال رقم الهوية أو الجوال المٌسجل في حجزك بالفندق
+                    </p>
+                </div>
+                
+                <button onclick="window.proceedToGuestPortal()" class="guest-welcome-btn" id="guest-welcome-proceed">
+                    <span>🚀 ابدأ تجربتك الآن</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Screen -->
+    <div id="guest-loader" class="guest-loader" style="display: none;">
+        <div class="guest-loader-content">
+            <div class="guest-loader-spinner"></div>
+            <div class="guest-loader-text">✨ نستعد لاستقبالك في منظومة Adora...</div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="guest-container" id="guest-container" style="display: none;">
+        <!-- Header with Logo -->
+        <header class="guest-header" id="guest-header">
+            <img id="guest-logo" src="" alt="Logo" class="guest-logo" style="display: none;" onerror="this.style.display='none';">
+            <div class="guest-header-text">
+                <h1 id="guest-title" class="guest-title">أهلاً بك في منظومة Adora</h1>
+                <div id="guest-subtitle" class="guest-subtitle">خدمة الغرفة السريعة</div>
+            </div>
+            <div class="guest-room-badge" id="guest-room-badge" style="position: relative;">
+                غرفة <span id="guest-room-num">--</span>
+                <div id="guest-cleaning-notification" style="display: none; margin-top: 8px; padding: 8px 12px; background: rgba(251, 191, 36, 0.1); border-radius: 8px; border-right: 3px solid rgba(251, 191, 36, 0.5); font-size: 0.85rem; color: var(--guest-text-sec); line-height: 1.4;">
+                    <span style="color: rgba(251, 191, 36, 0.9); font-weight: 600;">⚠️ تنبيه:</span>
+                    <span id="guest-cleaning-notification-text"></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Tabs Navigation -->
+        <section id="guest-tabs" class="guest-tabs-container"></section>
+
+        <!-- Main Content Area -->
+        <section id="guest-content" class="guest-content">
+            <div class="guest-welcome-message">
+                <div class="guest-welcome-icon">👋</div>
+                <div class="guest-welcome-text">اختر خدمة من القائمة أعلاه</div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="guest-footer" id="guest-footer">
+            <div id="guest-footer-text" style="margin-bottom: 12px;"></div>
+            <div class="developer-signature">
+                تنفيذ: أيمن أبو وردة - <a href="mailto:77aayy@gmail.com">77aayy@gmail.com</a> - <a href="tel:0570707121">0570707121</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Guest Engine Hybrid (Geo-Fence + Device Security) -->
+    <script src="guest-engine-hybrid.js"></script>
+    
+    <!-- Guest Engine Script -->
+    <script src="guest-engine.js"></script>
+</body>
+</html>
