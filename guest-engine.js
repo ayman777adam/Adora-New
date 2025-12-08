@@ -738,7 +738,7 @@
                             <!-- سيتم ملؤها ديناميكياً -->
                         </div>
                         <div style="display: flex; gap: 10px;">
-                            <button onclick="window.sendFNBCart()" class="guest-btn" style="flex: 1; background: linear-gradient(135deg, var(--guest-primary), var(--guest-primary-dark)); color: white !important; font-weight: 700; padding: 16px; border: 2px solid var(--guest-primary);">
+                            <button onclick="window.sendFNBCart()" class="guest-btn" style="flex: 1; background: linear-gradient(135deg, var(--guest-primary), var(--guest-primary-dark)); color: gold !important; font-weight: 700; padding: 16px; border: 2px solid var(--guest-primary);">
                                 🚀 إرسال الطلب
                             </button>
                             <button onclick="window.clearFNBCart()" class="guest-btn" style="background: rgba(239, 68, 68, 0.1); color: #DC2626; border: 2px solid rgba(239, 68, 68, 0.3);">
@@ -904,7 +904,7 @@
         const details = `🛒 طلب من الكافي شوب:\n\n${itemsList}${total > 0 ? `\n\n💰 الإجمالي: ${total.toFixed(2)} ريال` : ''}`;
         
         // إرسال الطلب
-        sendGuestRequest('fnb', details, null, true);
+        sendGuestRequest(currentRoom,'fnb', details, 'instant', null);
         
         // مسح السلة بعد الإرسال
         DEFAULT_CONFIG.fnbCart = [];
