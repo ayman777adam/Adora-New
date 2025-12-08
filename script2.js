@@ -3491,13 +3491,15 @@ function renderGuestRequests() {
     // تعديل: استبعاد طلبات النظافة تماماً من هذه القائمة لأنها تظهر في قسم تتبع الغرف
     const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType !== 'cleaning');
     
-    // تصحيح: هذا هو التعريف الوحيد والصحيح للمتغير (تم حذف التكرار)
+    // تصحيح: تعريف المتغير مرة واحدة فقط
     const scheduledReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType !== 'cleaning');
     
     const archiveReqs = appState.guestRequestsLog || [];
     
-    // سيتم عرضها في قسم تتبع الغرف - طلبات النظافة (cleaning)
+    // تعريف طلبات النظافة (للاستخدام الداخلي أو في أقسام أخرى)
     const activeCleaningReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType === 'cleaning' && r.roomTracking);
+    const scheduledCleaningReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType === 'cleaning' && r.roomTracking);
+
     const requestSection = document.getElementById('guest-requests-section');
     const archiveContainer = document.getElementById('req-archive-container');
 
@@ -3540,6 +3542,7 @@ function renderGuestRequests() {
         }
     }
 }
+
 
 // تم حذف وظائف الأرشيف - تم نقلها إلى نظام التقارير
 
