@@ -27,7 +27,7 @@
                 
                 <div class="guest-form-group">
                     <label class="guest-form-label" style="color: #DC2626;">👤 الهوية الوطنية أو رقم الجوال</label>
-                    <input type="text" id="guest-welcome-identity" class="guest-form-input" placeholder="أدخل رقم الهوية أو الجوال المعتمد في الحجز" autocomplete="off" onkeypress="if(event.key === 'Enter') { window.proceedToGuestPortal(); }">
+                    <input type="text" id="guest-welcome-identity" class="guest-form-input" placeholder="أدخل رقم الهوية أو الجوال المعتمد في الحجز (أرقام فقط)" autocomplete="off" inputmode="numeric" pattern="[0-9]*" onkeypress="if(event.key === 'Enter') { window.proceedToGuestPortal(); }">
                     <p class="guest-form-hint">
                         الخدمة متاحة للنزلاء فقط… نرجو إدخال رقم الهوية أو الجوال المٌسجل في حجزك بالفندق
                     </p>
@@ -37,6 +37,11 @@
                     <span>🚀 ابدأ تجربتك الآن</span>
                 </button>
             </div>
+        </div>
+        
+        <!-- Developer Signature - Fixed Footer -->
+        <div class="guest-welcome-developer-signature">
+            تنفيذ: أيمن أبو وردة - <a href="mailto:77aayy@gmail.com">77aayy@gmail.com</a> - <a href="tel:0570707121">0570707121</a>
         </div>
     </div>
 

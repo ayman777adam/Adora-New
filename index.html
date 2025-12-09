@@ -10,6 +10,8 @@
     <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-storage.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
    <link rel="stylesheet" href="style2.css">
 </head>
@@ -181,7 +183,7 @@
                 </div>
                 
                 <div class="sec-title" style="background: linear-gradient(135deg, rgba(0, 172, 193, 0.15), rgba(0, 172, 193, 0.08)); border: 2px solid rgba(0, 172, 193, 0.3); border-radius: 12px; padding: 12px 16px; margin-bottom: 15px;">
-                    <span style="color: #00ACC1; font-weight: 700; font-size: 1.1rem;">🧹 طلبات تنظيف ( خارج - ساكن )</span>
+                    <span id="cleaning-requests-title" style="color: #00ACC1; font-weight: 700; font-size: 1.1rem;">🧹 طلبات تنظيف ( خارج - ساكن )</span>
                 </div>
                 
                 <!-- حاوية البحث مع نظام التحقق الذكي -->
@@ -376,39 +378,41 @@
 
     <!-- Complete Maintenance Modal -->
     <div id="complete-maint-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h3 style="color:var(--maint-color); margin-top:0; font-size:1.1rem; display:flex; align-items:center; gap:8px;">
-                <span>✅</span>
-                <span>إنهاء الصيانة</span>
-            </h3>
+        <div class="modal-content" style="background: linear-gradient(135deg, rgba(14,165,233,0.05), rgba(6,182,212,0.05)); border: 2px solid rgba(14,165,233,0.2);">
+            <div style="background: linear-gradient(135deg, var(--maint-color), #0EA5E9); padding: 20px; border-radius: 16px 16px 0 0; margin: -20px -20px 20px -20px; color: white; box-shadow: 0 4px 12px rgba(14,165,233,0.3);">
+                <h3 style="color: white; margin: 0; font-size: 1.3rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.8rem;">✅</span>
+                    <span>إنهاء الصيانة</span>
+                </h3>
+            </div>
             
-            <div id="maint-room-num-display" style="font-size:0.95rem; font-weight:600; margin-bottom:15px; color:rgba(14,165,233,0.7); text-align:right;">غرفة XXX</div>
+            <div id="maint-room-num-display" style="font-size: 1.1rem; font-weight: 700; margin-bottom: 20px; color: var(--maint-color); text-align: center; padding: 12px; background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(6,182,212,0.1)); border-radius: 12px; border: 2px solid rgba(14,165,233,0.3);">غرفة XXX</div>
             
-            <div style="margin-bottom:15px; padding:12px 16px; background:#ffffff; border-radius:12px; border:1px solid #f1f5f9; display:flex; align-items:center; gap:10px;">
-                <span style="font-size:1.2rem;">⏰</span>
-                <div style="flex:1;">
-                    <label style="display:block; font-weight:600; color:var(--text-sec); font-size:0.85rem; margin-bottom:4px;">وقت بدء الصيانة:</label>
-                    <div id="maint-start-time" style="font-size:1rem; font-weight:700; color:var(--text-main);">--:--</div>
+            <div style="margin-bottom: 20px; padding: 16px; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); border-radius: 12px; border: 2px solid rgba(14,165,233,0.2); display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+                <div style="width: 50px; height: 50px; background: linear-gradient(135deg, var(--maint-color), #0EA5E9); border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; flex-shrink: 0; box-shadow: 0 2px 6px rgba(14,165,233,0.3);">⏰</div>
+                <div style="flex: 1;">
+                    <label style="display: block; font-weight: 700; color: var(--text-sec); font-size: 0.85rem; margin-bottom: 6px;">وقت بدء الصيانة:</label>
+                    <div id="maint-start-time" style="font-size: 1.1rem; font-weight: 800; color: var(--maint-color);">--:--</div>
                 </div>
             </div>
             
-            <div style="margin-bottom:15px;">
-                <label for="maint-img-camera-input" style="display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; padding:16px; background:#f8fafc; border-radius:12px; border:2px dashed var(--maint-color); cursor:pointer; transition:all 0.3s;">
-                    <div style="flex:1; text-align:right;">
-                        <div style="font-weight:700; font-size:0.95rem; color:var(--maint-color); margin-bottom:4px;">رفع صورة إجبارية</div>
-                        <div style="font-size:0.8rem; color:var(--text-sec);">اضغط لالتقاط أو اختيار صورة</div>
+            <div style="margin-bottom: 20px;">
+                <label for="maint-img-camera-input" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 20px; background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(6,182,212,0.1)); border-radius: 16px; border: 2px dashed var(--maint-color); cursor: pointer; transition: all 0.3s; box-shadow: 0 2px 8px rgba(14,165,233,0.1);" onmouseover="this.style.background='linear-gradient(135deg, rgba(14,165,233,0.15), rgba(6,182,212,0.15))'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(14,165,233,0.2)';" onmouseout="this.style.background='linear-gradient(135deg, rgba(14,165,233,0.1), rgba(6,182,212,0.1))'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 8px rgba(14,165,233,0.1)';">
+                    <div style="flex: 1; text-align: right;">
+                        <div style="font-weight: 800; font-size: 1rem; color: var(--maint-color); margin-bottom: 6px;">📷 رفع صورة إجبارية</div>
+                        <div style="font-size: 0.85rem; color: var(--text-sec);">اضغط لالتقاط أو اختيار صورة</div>
                     </div>
-                    <div style="width:48px; height:48px; background:linear-gradient(135deg, var(--maint-color), #0EA5E9); border-radius:12px; display:flex; justify-content:center; align-items:center; font-size:1.5rem; flex-shrink:0;">📷</div>
+                    <div style="width: 56px; height: 56px; background: linear-gradient(135deg, var(--maint-color), #0EA5E9); border-radius: 14px; display: flex; justify-content: center; align-items: center; font-size: 1.8rem; flex-shrink: 0; box-shadow: 0 4px 12px rgba(14,165,233,0.4);">📷</div>
                 </label>
-                <input type="file" accept="image/*" capture="environment" id="maint-img-camera-input" style="display:none;" required>
-                <div id="maint-img-uploaded-icon" style="display:none; margin-top:10px; padding:12px; background:rgba(34, 197, 94, 0.1); border-radius:12px; text-align:center; color:#15803d; font-weight:700; border:1px solid rgba(34, 197, 94, 0.2);">
+                <input type="file" accept="image/*" capture="environment" id="maint-img-camera-input" style="display: none;" required>
+                <div id="maint-img-uploaded-icon" style="display: none; margin-top: 12px; padding: 14px; background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.15)); border-radius: 12px; text-align: center; color: #15803d; font-weight: 800; border: 2px solid rgba(34, 197, 94, 0.3); box-shadow: 0 2px 8px rgba(34, 197, 94, 0.2);">
                     ✅ تم رفع الصورة بنجاح
                 </div>
             </div>
             
-            <div class="toggle-container" style="background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.3); margin-bottom: 15px;">
-                <div class="toggle-label" style="color: #1D4ED8; font-size:0.85rem; display: flex; align-items: center; gap: 6px;">
-                    <span id="auto-wa-indicator-maint" style="font-size: 0.7rem; padding: 2px 6px; background: rgba(34, 197, 94, 0.2); border-radius: 8px; color: #16A34A; font-weight: 700;">🟢 تلقائي</span>
+            <div class="toggle-container" style="background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(37, 99, 235, 0.1)); border: 2px solid rgba(59, 130, 246, 0.3); border-radius: 12px; margin-bottom: 20px; padding: 14px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);">
+                <div class="toggle-label" style="color: #1D4ED8; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; font-weight: 700;">
+                    <span id="auto-wa-indicator-maint" style="font-size: 0.75rem; padding: 4px 8px; background: rgba(34, 197, 94, 0.2); border-radius: 8px; color: #16A34A; font-weight: 800; border: 1px solid rgba(34, 197, 94, 0.3);">🟢 تلقائي</span>
                     <span>إرسال واتساب تلقائي</span>
                 </div>
                 <label class="switch">
@@ -416,9 +420,9 @@
                     <span class="slider"></span>
                 </label>
             </div>
-            <div style="display: flex; gap: 10px;">
-                <button onclick="confirmCompleteMaintenance()" class="glass-btn submit-action-btn" id="btn_confirm_maint_finish" style="flex: 1;">توثيق وإنهاء 🚀</button>
-                <button onclick="closeModal('complete-maint-modal')" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+            <div style="display: flex; gap: 12px;">
+                <button onclick="confirmCompleteMaintenance()" class="glass-btn submit-action-btn" id="btn_confirm_maint_finish" style="flex: 2; padding: 16px; font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--maint-color), #0EA5E9); color: white; border: none; box-shadow: 0 4px 12px rgba(14,165,233,0.4);">✅ توثيق وإنهاء</button>
+                <button onclick="closeModal('complete-maint-modal')" class="glass-btn back-action-btn" style="flex: 1; padding: 16px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); color: #6b7280; border: 2px solid rgba(148, 163, 184, 0.3);">↩️ رجوع</button>
             </div>
         </div>
     </div>
@@ -456,23 +460,53 @@
 
     <!-- Guest Portal Manager Modal -->
     <div id="guest-portal-manager-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
-                <h3 style="margin: 0; color: var(--primary); font-size: 1.4rem;">🎨 لوحة تحكم بوابة النزيل</h3>
-                <button onclick="closeModal('guest-portal-manager-modal')" class="tools-btn" style="font-size: 1.2rem;">✕</button>
+        <div class="modal-content" style="max-width: 1000px; max-height: 95vh; overflow-y: auto; padding: 25px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; padding-bottom: 15px; border-bottom: 3px solid var(--primary);">
+                <div>
+                    <h3 style="margin: 0; color: var(--primary); font-size: 1.6rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 2rem;">🎨</span>
+                        <span>لوحة تحكم بوابة النزيل</span>
+                    </h3>
+                    <p style="margin: 5px 0 0 0; color: var(--text-sec); font-size: 0.9rem; font-weight: 500;">سهل • سريع • احترافي</p>
+                </div>
+                <button onclick="closeModal('guest-portal-manager-modal')" class="tools-btn" style="font-size: 1.3rem; width: 40px; height: 40px; border-radius: 10px; background: rgba(239,68,68,0.1); color: #EF4444; border: 2px solid rgba(239,68,68,0.3); transition: all 0.3s;" 
+                        onmouseover="this.style.background='rgba(239,68,68,0.2)'; this.style.transform='scale(1.1)';" 
+                        onmouseout="this.style.background='rgba(239,68,68,0.1)'; this.style.transform='scale(1)';">
+                    ✕
+                </button>
             </div>
 
-            <!-- Tabs Navigation -->
-            <div style="display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color);">
-                <button onclick="switchGuestPortalTab('design')" id="gpm-tab-design" class="add-mode-tab active" style="flex: 1;">🎨 التصميم</button>
-                <button onclick="switchGuestPortalTab('tabs')" id="gpm-tab-tabs" class="add-mode-tab" style="flex: 1;">📑 التبويبات</button>
-                <button onclick="switchGuestPortalTab('links')" id="gpm-tab-links" class="add-mode-tab" style="flex: 1;">🔗 الروابط</button>
-                <button onclick="switchGuestPortalTab('qr')" id="gpm-tab-qr" class="add-mode-tab" style="flex: 1;">🖨️ QR</button>
+            <!-- Tabs Navigation - Improved Design -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 25px; background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(139,92,246,0.05)); padding: 12px; border-radius: 16px; border: 2px solid rgba(59,130,246,0.2);">
+                <button onclick="switchGuestPortalTab('design')" id="gpm-tab-design" class="add-mode-tab active" 
+                        style="padding: 14px; border-radius: 12px; font-weight: 700; font-size: 0.95rem; background: linear-gradient(135deg, var(--primary), #6366F1); color: white; border: none; box-shadow: 0 4px 12px rgba(59,130,246,0.3); transition: all 0.3s;"
+                        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(59,130,246,0.4)';"
+                        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(59,130,246,0.3)';">
+                    🎨 التصميم
+                </button>
+                <button onclick="switchGuestPortalTab('content')" id="gpm-tab-content" class="add-mode-tab" 
+                        style="padding: 14px; border-radius: 12px; font-weight: 700; font-size: 0.95rem; background: white; color: var(--text-main); border: 2px solid var(--border-color); transition: all 0.3s;"
+                        onmouseover="this.style.background='rgba(59,130,246,0.1)'; this.style.borderColor='var(--primary)'; this.style.transform='translateY(-2px)';"
+                        onmouseout="this.style.background='white'; this.style.borderColor='var(--border-color)'; this.style.transform='translateY(0)';">
+                    📋 المحتوى والروابط
+                </button>
+                <button onclick="switchGuestPortalTab('qr')" id="gpm-tab-qr" class="add-mode-tab" 
+                        style="padding: 14px; border-radius: 12px; font-weight: 700; font-size: 0.95rem; background: white; color: var(--text-main); border: 2px solid var(--border-color); transition: all 0.3s;"
+                        onmouseover="this.style.background='rgba(59,130,246,0.1)'; this.style.borderColor='var(--primary)'; this.style.transform='translateY(-2px)';"
+                        onmouseout="this.style.background='white'; this.style.borderColor='var(--border-color)'; this.style.transform='translateY(0)';">
+                    🖨️ QR
+                </button>
             </div>
 
             <!-- Design Tab -->
             <div id="gpm-content-design" class="gpm-tab-content">
-                <h4 style="color: var(--primary); margin-top: 0;">إعدادات التصميم</h4>
+                <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); padding: 15px 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid rgba(59,130,246,0.3);">
+                    <h4 style="color: var(--primary); margin: 0; font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.5rem;">🎨</span>
+                        <span>إعدادات التصميم</span>
+                    </h4>
+                    <p style="margin: 8px 0 0 0; color: var(--text-sec); font-size: 0.85rem;">خصص مظهر بوابة النزيل حسب ذوقك</p>
+                </div>
                 
                 <div style="margin-bottom: 15px;">
                     <label class="modal-label">🎨 لون الخلفية</label>
@@ -533,122 +567,293 @@
                     <label class="modal-label">🎨 اللون الأساسي</label>
                     <input type="color" id="gpm-primary-color" value="#00ACC1" style="width: 100%; height: 50px; border-radius: 8px; border: 2px solid var(--border-color);">
                 </div>
+                
+                <!-- معاينة مباشرة -->
+                <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); padding: 15px 20px; border-radius: 12px; margin-top: 20px; border: 2px solid rgba(59,130,246,0.3);">
+                    <h4 style="color: var(--primary); margin: 0 0 10px 0; font-size: 1rem; font-weight: 700;">👁️ معاينة مباشرة</h4>
+                    <p style="margin: 0 0 15px 0; color: var(--text-sec); font-size: 0.85rem;">شاهد التغييرات مباشرة قبل الحفظ</p>
+                    <div id="gpm-design-preview" style="background: #E3E8FF; padding: 20px; border-radius: 12px; border: 2px solid var(--border-color); min-height: 200px; position: relative; overflow: hidden;">
+                        <div style="text-align: center; padding: 20px; color: var(--text-main);">
+                            <div style="font-size: 3rem; margin-bottom: 15px;">🏨</div>
+                            <h3 style="margin: 0 0 10px 0; color: #00ACC1; font-size: 1.5rem; font-weight: 700;">أهلاً بك في منظومة Adora</h3>
+                            <p style="margin: 0; font-size: 1rem; opacity: 0.8;">خدمة الغرفة السريعة</p>
+                            <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                                <div style="background: #00ACC1; color: white; padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;">تبويب 1</div>
+                                <div style="background: rgba(255,255,255,0.3); color: var(--text-main); padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;">تبويب 2</div>
+                                <div style="background: rgba(255,255,255,0.3); color: var(--text-main); padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;">تبويب 3</div>
+                            </div>
+                        </div>
+                        <div style="position: absolute; bottom: 10px; right: 10px; font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 6px;">
+                            معاينة مباشرة
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- زر معاينة صفحة النزيل -->
+                <div style="margin-top: 20px; display: flex; gap: 10px;">
+                    <button onclick="previewGuestPortalWithCurrentSettings()" class="glass-btn submit-action-btn" 
+                            style="flex: 1; padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #10B981, #059669); color: white; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(16,185,129,0.3);">
+                        👁️ معاينة صفحة النزيل
+                    </button>
+                    <button onclick="saveGuestPortalSettings()" class="glass-btn submit-action-btn" 
+                            style="flex: 1; padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #6366F1); color: white; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(59,130,246,0.3);">
+                        💾 حفظ الإعدادات
+                    </button>
+                </div>
             </div>
 
-            <!-- Tabs Tab -->
-            <div id="gpm-content-tabs" class="gpm-tab-content" style="display: none;">
-                <h4 style="color: var(--primary); margin-top: 0;">إعدادات التبويبات</h4>
+            <!-- Content Tab (Merged Tabs + Links) -->
+            <div id="gpm-content-content" class="gpm-tab-content" style="display: none;">
+                <!-- التبويبات -->
+                <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); padding: 15px 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid rgba(59,130,246,0.3);">
+                    <h4 style="color: var(--primary); margin: 0; font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.5rem;">📑</span>
+                        <span>التبويبات</span>
+                    </h4>
+                    <p style="margin: 8px 0 0 0; color: var(--text-sec); font-size: 0.85rem;">أضف وعدّل التبويبات التي تظهر في صفحة النزيل</p>
+                </div>
                 
                 <div id="gpm-tabs-list" style="margin-bottom: 20px;">
                     <!-- سيتم ملؤها ديناميكياً -->
                 </div>
 
-                <button onclick="addNewTab()" class="glass-btn" style="width: 100%; margin-bottom: 20px;">➕ إضافة تبويب جديد</button>
+                <div style="background: rgba(59,130,246,0.05); padding: 12px; border-radius: 8px; margin-bottom: 20px; border: 1px solid rgba(59,130,246,0.2);">
+                    <p style="margin: 0; color: var(--text-sec); font-size: 0.85rem; line-height: 1.5;">
+                        💡 <strong>ملاحظة:</strong> يمكنك تعديل اسم التبويب، تفعيله أو إلغاء تفعيله، وإضافة رابط أو رقم واتساب للتبويبات التي تحتاج ذلك. لتبويب "شارك تجربتك"، أدخل رابط خرائط جوجل وسيتم استخراج رابط التقييم تلقائياً.
+                    </p>
+                </div>
                 
-                <h4 style="color: var(--primary); margin-top: 20px; margin-bottom: 15px;">🍽️ عناصر الأغذية والمشروبات</h4>
+                <!-- عناصر الأغذية والمشروبات -->
+                <div style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.1)); padding: 15px 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid rgba(245,158,11,0.3);">
+                    <h4 style="color: #F59E0B; margin: 0; font-size: 1.1rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.3rem;">🍽️</span>
+                        <span>عناصر الأغذية والمشروبات (لتبويب الكافي شوب)</span>
+                    </h4>
+                    <p style="margin: 8px 0 0 0; color: var(--text-sec); font-size: 0.85rem;">أضف عناصر القائمة التي تظهر في تبويب الكافي شوب</p>
+                </div>
                 
                 <div id="gpm-fnb-list" style="margin-bottom: 20px;">
                     <!-- سيتم ملؤها ديناميكياً -->
                 </div>
                 
-                <button onclick="addFNBItem()" class="glass-btn" style="width: 100%;">➕ إضافة عنصر جديد</button>
-            </div>
-
-            <!-- Links Tab -->
-            <div id="gpm-content-links" class="gpm-tab-content" style="display: none;">
-                <h4 style="color: var(--primary); margin-top: 0;">إعدادات الروابط</h4>
+                <button onclick="addFNBItem()" class="glass-btn" style="width: 100%; margin-bottom: 30px; padding: 14px; font-size: 1rem; font-weight: 700;">➕ إضافة عنصر جديد</button>
                 
-                <div style="margin-bottom: 15px;">
-                    <label class="modal-label">⭐ رابط تقييم Google</label>
-                    <input type="text" id="gpm-google-review" placeholder="https://g.page/r/..." style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color);">
+                <!-- الروابط والإعدادات -->
+                <div style="background: linear-gradient(135deg, rgba(139,92,246,0.1), rgba(168,85,247,0.1)); padding: 15px 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid rgba(139,92,246,0.3);">
+                    <h4 style="color: #8B5CF6; margin: 0; font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.5rem;">🔗</span>
+                        <span>الروابط والإعدادات</span>
+                    </h4>
+                    <p style="margin: 8px 0 0 0; color: var(--text-sec); font-size: 0.85rem;">روابط التواصل والإعدادات المستخدمة في التبويبات</p>
                 </div>
 
-                <div style="margin-bottom: 15px;">
-                    <label class="modal-label">💬 واتساب المدير</label>
-                    <input type="text" id="gpm-whatsapp-manager" placeholder="966501234567" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color);">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">⭐ رابط تقييم Google</label>
+                        <input type="text" id="gpm-google-review" placeholder="https://g.page/r/..." 
+                               style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem;"
+                               title="يستخدم في تبويب 'شارك تجربتك'">
                 </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label class="modal-label">🍕 واتساب المطعم</label>
-                    <input type="text" id="gpm-whatsapp-kitchen" placeholder="966501234567" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color);">
-                </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label class="modal-label">📞 رقم الاستقبال</label>
-                    <input type="text" id="gpm-reception-phone" placeholder="966501234567" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color);">
-                </div>
-
-                <div style="margin-bottom: 15px;">
-                    <label class="modal-label">💬 رسالة الترحيب الافتراضية</label>
-                    <textarea id="gpm-welcome-message" rows="3" placeholder="مرحباً بك في فندقنا..." style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color);"></textarea>
-                </div>
-
-                <!-- BEGIN: Geofence admin block -->
-                <div class="admin-section" style="margin-bottom:18px; padding: 20px; background: rgba(0, 172, 193, 0.05); border-radius: 12px; border: 2px solid rgba(0, 172, 193, 0.2);">
-                    <h3 style="color: var(--primary); margin-top: 0; margin-bottom: 15px;">📍 موقع الفندق (Geofence)</h3>
-
-                    <label class="modal-label">رابط خريطة Google</label>
-                    <input id="gpm-map-link" type="text" placeholder="ألصق رابط Google Maps أو الرابط المختصر هنا" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color);" />
-
-                    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
-                        <button id="gpm-parse-map-btn" class="glass-btn" style="flex: 1;">🔎 فحص واستخراج الإحداثيات</button>
-                        <input id="gpm-map-radius" type="number" placeholder="نطاق المتر (افتراضي 150)" value="150" style="width:170px;padding:8px;border-radius:8px;border:2px solid var(--border-color);" />
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">💬 واتساب المدير</label>
+                        <input type="text" id="gpm-whatsapp-manager" placeholder="966501234567" 
+                               style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem;"
+                               title="يستخدم في تبويب 'تواصل مباشر'">
                     </div>
-                    <div id="gpm-map-msg" style="margin-top:8px;color:var(--text-sec);font-size:0.95rem;min-height:20px;"></div>
+                </div>
 
-                    <div style="margin-top:12px; display:flex; gap:8px;">
-                        <div style="flex:1">
-                            <label class="modal-label">خط العرض (Latitude)</label>
-                            <input id="geo-lat" type="text" placeholder="مثال: 24.713605" style="width:100%;padding:8px;border-radius:8px;border:2px solid var(--border-color);" />
-                        </div>
-                        <div style="flex:1">
-                            <label class="modal-label">خط الطول (Longitude)</label>
-                            <input id="geo-lng" type="text" placeholder="مثال: 46.675296" style="width:100%;padding:8px;border-radius:8px;border:2px solid var(--border-color);" />
-                        </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">🍕 واتساب المطعم</label>
+                        <input type="text" id="gpm-whatsapp-kitchen" placeholder="966501234567" 
+                               style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem;"
+                               title="يستخدم في تبويب 'طلبات المأكولات'">
                     </div>
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">📞 رقم الاستقبال</label>
+                        <input type="text" id="gpm-reception-phone" placeholder="966501234567" 
+                               style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem;">
+                    </div>
+                </div>
 
-                    <p style="margin-top:10px;color:#6b7280;font-size:0.85rem;line-height:1.5;">
-                        النظام سيحاول استخراج الإحداثيات تلقائيًا؛ إن فشل، أدخلها يدويًا ثم اضغط حفظ.
+                <div style="margin-bottom: 15px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">💬 رسالة الترحيب الافتراضية</label>
+                    <textarea id="gpm-welcome-message" rows="3" placeholder="مرحباً بك في فندقنا..." 
+                              style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem; resize: vertical; font-family: 'Tajawal', sans-serif;"></textarea>
+                </div>
+
+                <!-- موقع الفندق (Geofence) - مبسط -->
+                <div style="background: rgba(0, 172, 193, 0.05); padding: 15px; border-radius: 12px; border: 2px solid rgba(0, 172, 193, 0.2); margin-bottom: 15px;">
+                    <h5 style="color: var(--primary); margin-top: 0; margin-bottom: 12px; font-size: 1rem; font-weight: 700;">📍 موقع الفندق (Geofence)</h5>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                        <div>
+                            <label class="modal-label" style="font-size: 0.85rem; font-weight: 600;">خط العرض</label>
+                            <input id="geo-lat" type="text" placeholder="24.713605" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                    </div>
+                        <div>
+                            <label class="modal-label" style="font-size: 0.85rem; font-weight: 600;">خط الطول</label>
+                            <input id="geo-lng" type="text" placeholder="46.675296" style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                        </div>
+                        </div>
+                    <p style="margin-top:10px;color:#6b7280;font-size:0.8rem;line-height:1.4;">
+                        💡 أدخل إحداثيات موقع الفندق (اختياري)
                     </p>
                 </div>
-                <!-- END: Geofence admin block -->
+
+                <!-- أوقات تنشيط الطلبات -->
+                <div style="background: rgba(16, 185, 129, 0.05); padding: 15px; border-radius: 12px; border: 2px solid rgba(16, 185, 129, 0.2); margin-bottom: 15px;">
+                    <h5 style="color: var(--primary); margin-top: 0; margin-bottom: 12px; font-size: 1rem; font-weight: 700;">⏰ أوقات تنشيط الطلبات</h5>
+                    
+                    <div style="display: grid; gap: 15px;">
+                        <!-- النظافة: قيد زمني بين الطلبات + أوقات العمل -->
+                        <div style="background: rgba(0, 172, 193, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(0, 172, 193, 0.2);">
+                            <label class="modal-label" style="font-size: 0.85rem; font-weight: 600;">🧹 النظافة الفورية</label>
+                            
+                            <div style="margin-top: 8px;">
+                                <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">المدة بين الطلبات (بالساعات)</label>
+                                <input id="gpm-cleaning-cooldown" type="number" min="0" max="24" step="0.5" value="12" placeholder="12" 
+                                       style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem; margin-bottom: 10px;" />
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">أوقات العمل - من</label>
+                                    <input id="gpm-cleaning-from" type="time" value="08:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">إلى</label>
+                                    <input id="gpm-cleaning-to" type="time" value="22:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                            </div>
+                            <p style="margin-top: 5px; color: #6b7280; font-size: 0.75rem;">المدة بين كل طلب نظافة + أوقات العمل الرسمية للطلبات الفورية</p>
+                        </div>
+                        
+                        <!-- الصيانة: أوقات العمل + مؤشر 24 ساعة -->
+                        <div style="background: rgba(255, 152, 0, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(255, 152, 0, 0.2);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <label class="modal-label" style="font-size: 0.85rem; font-weight: 600; margin: 0;">🛠️ الصيانة الفورية (أوقات العمل الرسمية)</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.75rem; color: #6b7280;">
+                                    <input type="checkbox" id="gpm-maintenance-24h" style="width: 18px; height: 18px; cursor: pointer;" />
+                                    <span>24 ساعة (عادي)</span>
+                                </label>
+                            </div>
+                            <div id="gpm-maintenance-hours-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">من</label>
+                                    <input id="gpm-maintenance-from" type="time" value="08:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">إلى</label>
+                                    <input id="gpm-maintenance-to" type="time" value="22:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                            </div>
+                            <p style="margin-top: 5px; color: #6b7280; font-size: 0.75rem;">أوقات العمل الرسمية للصيانة الفورية (خارج هذه الأوقات يتم رفض الطلب الفوري)</p>
+                        </div>
+                        
+                        <!-- الطلبات: أوقات العمل + مؤشر 24 ساعة -->
+                        <div style="background: rgba(139, 92, 246, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.2);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <label class="modal-label" style="font-size: 0.85rem; font-weight: 600; margin: 0;">🛎️ الطلبات الفورية (أوقات العمل الرسمية)</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.75rem; color: #6b7280;">
+                                    <input type="checkbox" id="gpm-requests-24h" style="width: 18px; height: 18px; cursor: pointer;" />
+                                    <span>24 ساعة (عادي)</span>
+                                </label>
+                            </div>
+                            <div id="gpm-requests-hours-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">من</label>
+                                    <input id="gpm-requests-from" type="time" value="08:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">إلى</label>
+                                    <input id="gpm-requests-to" type="time" value="22:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                            </div>
+                            <p style="margin-top: 5px; color: #6b7280; font-size: 0.75rem;">أوقات العمل الرسمية للطلبات الفورية (خارج هذه الأوقات يتم رفض الطلب الفوري)</p>
+                        </div>
+                        
+                        <!-- الكافي شوب: أوقات العمل للفوري -->
+                        <div style="background: rgba(139, 69, 19, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(139, 69, 19, 0.2);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                                <label class="modal-label" style="font-size: 0.85rem; font-weight: 600; margin: 0;">☕ خدمات الكافي شوب (أوقات العمل الرسمية)</label>
+                                <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.75rem; color: #6b7280;">
+                                    <input type="checkbox" id="gpm-fnb-24h" style="width: 18px; height: 18px; cursor: pointer;" />
+                                    <span>24 ساعة (عادي)</span>
+                                </label>
+                            </div>
+                            <div id="gpm-fnb-hours-container" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px;">
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">من</label>
+                                    <input id="gpm-fnb-from" type="time" value="08:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                                <div>
+                                    <label style="font-size: 0.75rem; color: #6b7280; display: block; margin-bottom: 4px;">إلى</label>
+                                    <input id="gpm-fnb-to" type="time" value="22:00" 
+                                           style="width:100%;padding:10px;border-radius:8px;border:2px solid var(--border-color); font-size: 0.9rem;" />
+                                </div>
+                            </div>
+                            <p style="margin-top: 5px; color: #6b7280; font-size: 0.75rem;">أوقات العمل الرسمية لخدمات الكافي شوب (خارج هذه الأوقات يتم رفض الطلب الفوري)</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- QR Tab -->
             <div id="gpm-content-qr" class="gpm-tab-content" style="display: none;">
-                <h4 style="color: var(--primary); margin-top: 0;">🖨️ مولد رموز الغرف (QR)</h4>
+                <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); padding: 15px 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid rgba(59,130,246,0.3);">
+                    <h4 style="color: var(--primary); margin: 0; font-size: 1.2rem; font-weight: 800; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.5rem;">🖨️</span>
+                        <span>مولد رموز QR للغرف</span>
+                    </h4>
+                    <p style="margin: 8px 0 0 0; color: var(--text-sec); font-size: 0.85rem;">أدخل نطاق الغرف لتوليد QR لكل غرفة تلقائياً</p>
+                </div>
                 
                 <!-- QR Generator Section -->
                 <div style="background: var(--bg-card); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid var(--border-color);">
-                    <h5 style="color: var(--primary); margin-top: 0; margin-bottom: 15px;">توليد رموز QR للغرف</h5>
+                    <h5 style="color: var(--primary); margin-top: 0; margin-bottom: 15px; font-size: 1.1rem; font-weight: 700;">📋 نطاق الغرف</h5>
                     
                     <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                         <div style="flex: 1;">
-                            <label class="modal-label">من غرفة</label>
-                            <input id="gpm-qr-from" type="number" placeholder="101" style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem;">
+                            <label class="modal-label" style="font-weight: 700;">🏠 من غرفة</label>
+                            <input id="gpm-qr-from" type="number" placeholder="101" min="1" 
+                                   style="width: 100%; padding: 14px; border-radius: 10px; border: 2px solid var(--primary); font-size: 1.1rem; font-weight: 600; text-align: center;">
                         </div>
                         <div style="flex: 1;">
-                            <label class="modal-label">إلى غرفة</label>
-                            <input id="gpm-qr-to" type="number" placeholder="120" style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem;">
+                            <label class="modal-label" style="font-weight: 700;">🏠 إلى غرفة</label>
+                            <input id="gpm-qr-to" type="number" placeholder="120" min="1" 
+                                   style="width: 100%; padding: 14px; border-radius: 10px; border: 2px solid var(--primary); font-size: 1.1rem; font-weight: 600; text-align: center;">
                         </div>
                     </div>
 
-                    <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 15px; flex-wrap: wrap;">
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <label style="font-weight: 700; font-size: 0.9rem;">حجم الـ QR:</label>
-                            <select id="gpm-qr-size" style="padding: 10px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 0.95rem;">
-                                <option value="120">120px</option>
-                                <option value="160" selected>160px</option>
-                                <option value="200">200px</option>
-                                <option value="250">250px</option>
+                    <div style="background: rgba(59,130,246,0.05); padding: 12px; border-radius: 10px; margin-bottom: 15px; border: 1px solid rgba(59,130,246,0.2);">
+                        <div style="font-size: 0.85rem; color: var(--text-sec); font-weight: 600;">
+                            💡 سيتم توليد QR لكل غرفة من <span id="qr-count-preview" style="color: var(--primary); font-weight: 800;">0</span> غرفة تلقائياً
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px;">
+                        <div>
+                            <label class="modal-label" style="font-weight: 700; font-size: 0.9rem; margin-bottom: 6px;">📏 حجم الـ QR</label>
+                            <select id="gpm-qr-size" style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; font-weight: 600;">
+                                <option value="120">صغير (120px)</option>
+                                <option value="160" selected>متوسط (160px)</option>
+                                <option value="200">كبير (200px)</option>
+                                <option value="250">كبير جداً (250px)</option>
                             </select>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <label style="font-weight: 700; font-size: 0.9rem;">أعمدة بالطباعة:</label>
-                            <select id="gpm-qr-columns" style="padding: 10px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 0.95rem;">
-                                <option value="2">2</option>
-                                <option value="3" selected>3</option>
-                                <option value="4">4</option>
+                        <div>
+                            <label class="modal-label" style="font-weight: 700; font-size: 0.9rem; margin-bottom: 6px;">📄 أعمدة بالطباعة</label>
+                            <select id="gpm-qr-columns" style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; font-weight: 600;">
+                                <option value="2">2 أعمدة</option>
+                                <option value="3" selected>3 أعمدة</option>
+                                <option value="4">4 أعمدة</option>
                             </select>
                         </div>
                     </div>
@@ -656,50 +861,42 @@
                     <div id="gpm-qr-preview-area" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-height: 420px; overflow: auto; margin-bottom: 15px; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 12px;"></div>
 
                     <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                        <button onclick="generateAndPrintQRFromGPM()" class="glass-btn submit-action-btn">🖨️ توليد وطباعة PDF</button>
+                        <button onclick="generateAndPrintQRFromGPM()" class="glass-btn submit-action-btn" 
+                                style="padding: 14px 24px; font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, #10B981, #059669); color: white; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(16,185,129,0.3); transition: all 0.3s;"
+                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(16,185,129,0.4)';"
+                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(16,185,129,0.3)';">
+                            📋 توليد QR
+                        </button>
+                        <button onclick="downloadQRAsPDF()" class="glass-btn submit-action-btn" 
+                                style="padding: 14px 24px; font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #6366F1); color: white; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(59,130,246,0.3); transition: all 0.3s;"
+                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(59,130,246,0.4)';"
+                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(59,130,246,0.3)';">
+                            🖨️ تحميل PDF عالي الجودة
+                        </button>
                     </div>
-                </div>
-
-                <!-- QR Settings Section -->
-                <div style="background: var(--bg-card); padding: 20px; border-radius: 12px; margin-bottom: 20px; border: 2px solid var(--border-color);">
-                    <h5 style="color: var(--primary); margin-top: 0; margin-bottom: 15px;">إعدادات QR الافتراضية</h5>
-                    
-                    <div style="margin-bottom: 15px;">
-                        <label class="modal-label">🖼️ إضافة لوجو داخل QR</label>
-                        <div class="toggle-container">
-                            <div class="toggle-label">تفعيل لوجو داخل QR</div>
-                            <label class="switch">
-                                <input type="checkbox" id="gpm-qr-logo-enabled">
-                                <span class="slider"></span>
-                            </label>
                         </div>
                     </div>
 
-                    <div id="gpm-qr-logo-section" style="margin-bottom: 15px; display: none;">
-                        <label class="modal-label">🖼️ رابط اللوجو للـ QR</label>
-                        <input type="text" id="gpm-qr-logo-url" placeholder="https://example.com/qr-logo.png" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color);">
-                    </div>
-                </div>
-
-                <!-- QR Templates Section -->
-                <div style="background: var(--bg-card); padding: 20px; border-radius: 12px; border: 2px solid var(--border-color);">
-                    <h5 style="color: var(--primary); margin-top: 0; margin-bottom: 15px;">💾 حفظ قالب توليد</h5>
-                    
-                    <input type="text" id="gpm-qr-template-name" placeholder="اسم القالب (مثل: قالب 101-120)" style="width: 100%; padding: 12px; border-radius: 8px; border: 2px solid var(--border-color); margin-bottom: 10px;">
-                    <button onclick="saveQRTemplate()" class="glass-btn" style="width: 100%; margin-bottom: 20px;">💾 حفظ القالب</button>
-
-                    <label class="modal-label">📋 القوالب المحفوظة</label>
-                    <div id="gpm-templates-list" style="max-height: 200px; overflow-y: auto;">
-                        <!-- سيتم ملؤها ديناميكياً -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- Action Buttons -->
-            <div style="display: flex; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color);">
-                <button onclick="saveGuestPortalSettings()" class="glass-btn submit-action-btn" style="flex: 1;">💾 حفظ جميع الإعدادات</button>
-                <button onclick="previewGuestPortal()" class="glass-btn" style="flex: 1;">👁️ معاينة</button>
-                <button onclick="closeModal('guest-portal-manager-modal')" class="glass-btn back-action-btn" style="flex: 1;">إغلاق</button>
+            <!-- Action Buttons - Improved Design -->
+            <div style="display: flex; gap: 12px; margin-top: 30px; padding-top: 25px; border-top: 3px solid var(--border-color);">
+                <button onclick="saveGuestPortalSettings()" class="glass-btn submit-action-btn" 
+                        style="flex: 2; padding: 16px; font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, var(--primary), #6366F1); color: white; border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(59,130,246,0.3); transition: all 0.3s;"
+                        onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(59,130,246,0.4)';"
+                        onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(59,130,246,0.3)';">
+                    💾 حفظ جميع الإعدادات
+                </button>
+                <button onclick="previewGuestPortal()" class="glass-btn" 
+                        style="flex: 1; padding: 16px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(56,189,248,0.1)); color: var(--primary); border: 2px solid var(--primary); border-radius: 12px; transition: all 0.3s;"
+                        onmouseover="this.style.background='linear-gradient(135deg, rgba(14,165,233,0.2), rgba(56,189,248,0.2))'; this.style.transform='translateY(-2px)';"
+                        onmouseout="this.style.background='linear-gradient(135deg, rgba(14,165,233,0.1), rgba(56,189,248,0.1))'; this.style.transform='translateY(0)';">
+                    👁️ معاينة
+                </button>
+                <button onclick="closeModal('guest-portal-manager-modal')" class="glass-btn back-action-btn" 
+                        style="flex: 1; padding: 16px; font-size: 1rem; font-weight: 700; background: rgba(239,68,68,0.1); color: #EF4444; border: 2px solid rgba(239,68,68,0.3); border-radius: 12px; transition: all 0.3s;"
+                        onmouseover="this.style.background='rgba(239,68,68,0.2)'; this.style.transform='translateY(-2px)';"
+                        onmouseout="this.style.background='rgba(239,68,68,0.1)'; this.style.transform='translateY(0)';">
+                    ✕ إغلاق
+                </button>
             </div>
         </div>
     </div>
@@ -863,9 +1060,9 @@
                 </div>
                 <div style="color: var(--text-sec); font-size: 0.8rem; margin-bottom: 12px; padding-right: 20px;">-------------------------------</div>
                 <button onclick="showPurchasesModal()" class="side-menu-item">📦 قائمة المشتريات</button>
-                <button onclick="showMaintenanceScheduler()" class="side-menu-item">🗓️ جدولة الصيانة</button>
-                <button onclick="showShiftLog()" class="side-menu-item">📒 سجل الشفت</button>
-                <button onclick="showNewsTickerEditor()" class="side-menu-item">📢 محرر الأخبار</button>
+                <button id="btn-maint-scheduler" class="side-menu-item" type="button" aria-label="جدولة الصيانة — افتح" title="جدولة الصيانة (Maintenance Scheduler)">🗓️ جدولة الصيانة</button>
+                <button id="btn-shift-log" class="side-menu-item" type="button" aria-label="سجل الشفت — افتح" title="سجل الشفت (Shift Log)">📒 سجل الشفت</button>
+                <button id="btn-news-ticker" class="side-menu-item" type="button" aria-label="محرر الأخبار — افتح" title="محرر الأخبار (News Ticker)">📢 محرر الأخبار</button>
             </div>
 
             <!-- 🟨 تجربة النزيل -->
@@ -886,7 +1083,7 @@
                     <span>التقارير والتحليلات</span>
                 </div>
                 <div style="color: var(--text-sec); font-size: 0.8rem; margin-bottom: 12px; padding-right: 20px;">-------------------------------</div>
-                <button onclick="showAdvancedReports()" class="side-menu-item">📊 التقارير</button>
+                <button id="btn-advanced-reports" class="side-menu-item" type="button" aria-label="التقارير المتقدمة — افتح" title="التقارير المتقدمة (Advanced Reports)">📊 التقارير</button>
             </div>
 
             <!-- 🟥 الإعدادات العامة -->
@@ -919,11 +1116,11 @@
             <h3 style="color: var(--primary); margin-top: 0;">📋 فحص الغرفة</h3>
             
             <!-- زرين من فوق: المشرف والاستقبال -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
-                <button onclick="openSupervisorInspection()" class="glass-btn inspection-mode-btn" id="btn-supervisor-inspection">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                <button onclick="openSupervisorInspection()" class="glass-btn inspection-mode-btn" id="btn-supervisor-inspection" style="padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); color: #6b7280; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: 12px; transition: all 0.3s;">
                     👔 إرسال للمشرف
                 </button>
-                <button onclick="openReceptionInspection()" class="glass-btn inspection-mode-btn active" id="btn-reception-inspection">
+                <button onclick="openReceptionInspection()" class="glass-btn inspection-mode-btn active" id="btn-reception-inspection" style="padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(37, 99, 235, 0.3)); color: #1d4ed8; border: 2px solid rgba(59, 130, 246, 0.5); border-radius: 12px; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2); transition: all 0.3s;">
                     🏨 تسليم للاستقبال
                 </button>
             </div>
@@ -933,27 +1130,27 @@
                 <input type="number" id="supervisor-room-num" placeholder="رقم الغرفة" 
                        style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); margin-bottom: 10px; text-align: center; font-size: 1.1rem;">
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                    <button onclick="setSupervisorUrgency('urgent')" id="supervisor-urgent-btn" class="glass-btn inspection-action-btn">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px;">
+                    <button onclick="setSupervisorUrgency('urgent')" id="supervisor-urgent-btn" class="glass-btn inspection-action-btn" style="padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); color: #6b7280; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: 12px; transition: all 0.3s;">
                         🔴 عاجل
                     </button>
-                    <button onclick="setSupervisorUrgency('normal')" id="supervisor-normal-btn" class="glass-btn inspection-action-btn">
+                    <button onclick="setSupervisorUrgency('normal')" id="supervisor-normal-btn" class="glass-btn inspection-action-btn active" style="padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(22, 163, 74, 0.25)); color: #15803d; border: 2px solid rgba(34, 197, 94, 0.4); border-radius: 12px; box-shadow: 0 2px 8px rgba(34, 197, 94, 0.2); transition: all 0.3s;">
                         🟢 غير عاجل
                     </button>
                 </div>
                 
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
-                    <button onclick="setSupervisorGuestStatus('inside')" id="supervisor-guest-inside-btn" class="glass-btn inspection-action-btn">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px;">
+                    <button onclick="setSupervisorGuestStatus('inside')" id="supervisor-guest-inside-btn" class="glass-btn inspection-action-btn" style="padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); color: #6b7280; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: 12px; transition: all 0.3s;">
                         👤 النزيل بالغرفة
                     </button>
-                    <button onclick="setSupervisorGuestStatus('outside')" id="supervisor-guest-outside-btn" class="glass-btn inspection-action-btn">
+                    <button onclick="setSupervisorGuestStatus('outside')" id="supervisor-guest-outside-btn" class="glass-btn inspection-action-btn" style="padding: 14px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); color: #6b7280; border: 2px solid rgba(148, 163, 184, 0.3); border-radius: 12px; transition: all 0.3s;">
                         🚪 النزيل بالخارج
                     </button>
                 </div>
                 
-                <div style="display: flex; gap: 10px; margin-top: 10px;">
-                    <button onclick="submitSupervisorInspection()" class="glass-btn inspection-submit-btn" style="flex: 1;">📤 إرسال للمشرف</button>
-                    <button onclick="closeModal('inspection-modal')" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                <div style="display: flex; gap: 12px; margin-top: 15px;">
+                    <button onclick="submitSupervisorInspection()" class="glass-btn inspection-submit-btn" style="flex: 2; padding: 16px; font-size: 1.1rem; font-weight: 800; background: linear-gradient(135deg, rgba(59, 130, 246, 0.3), rgba(37, 99, 235, 0.35)); color: #1d4ed8; border: 2px solid rgba(59, 130, 246, 0.5); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);">📤 إرسال للمشرف</button>
+                    <button onclick="closeModal('inspection-modal')" class="glass-btn back-action-btn" style="flex: 1; padding: 16px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); color: #6b7280; border: 2px solid rgba(148, 163, 184, 0.3);">↩️ رجوع</button>
                 </div>
             </div>
             
@@ -1027,64 +1224,172 @@
 
     <!-- Maintenance Scheduler Modal -->
     <div id="maintenance-scheduler-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h3 style="color: var(--maint-color); margin-top: 0;">🗓️ جدولة الصيانة الدورية</h3>
-            
-            <div style="margin-bottom: 15px;">
-                <label class="modal-label">رقم الغرفة</label>
-                <input type="number" id="scheduler-room-num" placeholder="مثال: 101" style="margin-bottom: 8px;">
-                <label class="modal-label">وصف المهمة</label>
-                <input type="text" id="scheduler-task-desc" placeholder="مثال: تنظيف فلتر التكييف" style="margin-bottom: 8px;">
-                <label class="modal-label">الوقت</label>
-                <input type="time" id="scheduler-time" value="09:00" style="margin-bottom: 8px;">
-                <label class="modal-label">التكرار</label>
-                <select id="scheduler-frequency" style="margin-bottom: 8px;">
-                    <option value="daily">يومي</option>
-                    <option value="weekly">أسبوعي</option>
-                    <option value="monthly">شهري</option>
-                    <option value="custom">مخصص</option>
-                </select>
-                <div id="scheduler-custom-days" style="display: none; margin-bottom: 8px;">
-                    <label class="modal-label">كل كم يوم؟</label>
-                    <input type="number" id="scheduler-custom-days-input" placeholder="مثال: 7" min="1">
-                </div>
-                <button onclick="addScheduledMaintenance()" class="glass-btn" style="background: var(--maint-color); margin-bottom: 10px;">➕ إضافة مهمة</button>
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                <h3 style="color: var(--maint-color); margin: 0; font-size: 1.4rem;">🗓️ جدولة الصيانة الدورية</h3>
+                <button onclick="closeMaintenanceScheduler()" class="tools-btn" style="font-size: 1.2rem;">✕</button>
             </div>
             
-            <div id="scheduled-maintenance-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
+            <div style="background: linear-gradient(135deg, rgba(14,165,233,0.05), rgba(56,189,248,0.05)); padding: 20px; border-radius: 16px; border: 2px solid rgba(14,165,233,0.2); margin-bottom: 20px;">
+                <h4 style="color: var(--maint-color); margin-top: 0; margin-bottom: 15px; font-size: 1.1rem;">➕ إضافة مهمة صيانة جديدة</h4>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">🏠 رقم الغرفة</label>
+                        <input type="number" id="scheduler-room-num" placeholder="مثال: 101" 
+                               style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; font-weight: 600; text-align: center;">
+                    </div>
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">⏰ الوقت</label>
+                        <input type="time" id="scheduler-time" value="09:00" 
+                               style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem;">
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 12px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">📝 وصف المهمة (يمكن إضافة عدة عناصر)</label>
+                    <textarea id="scheduler-task-desc" rows="3" placeholder="مثال: تنظيف فلتر التكييف&#10;أو عدة عناصر:&#10;1. تنظيف فلتر التكييف&#10;2. فحص الأسلاك&#10;3. تنظيف الفتحات" 
+                              style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--maint-color); font-size: 0.95rem; resize: vertical; font-family: 'Tajawal', sans-serif;"></textarea>
+                </div>
+                
+                <div style="margin-bottom: 12px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">🔄 نوع الجدولة</label>
+                    <select id="scheduler-frequency" onchange="handleSchedulerFrequencyChange()" 
+                            style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; font-weight: 600;">
+                        <option value="daily">📅 يومي</option>
+                        <option value="weekly">📅 أسبوعي</option>
+                        <option value="monthly">📅 شهري</option>
+                        <option value="specific">📅 حسب التاريخ المحدد</option>
+                        <option value="custom">🔄 مخصص (كل X يوم)</option>
+                </select>
+                </div>
+                
+                <div id="scheduler-custom-days" style="display: none; margin-bottom: 12px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">🔢 كل كم يوم؟</label>
+                    <input type="number" id="scheduler-custom-days-input" placeholder="مثال: 7" min="1" 
+                           style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; text-align: center;">
+            </div>
+            
+                <div id="scheduler-specific-date" style="display: none; margin-bottom: 12px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.9rem;">📅 التاريخ المحدد</label>
+                    <input type="date" id="scheduler-specific-date-input" 
+                           style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem;">
+                </div>
+                
+                <button onclick="addScheduledMaintenance()" class="glass-btn submit-action-btn" 
+                        style="width: 100%; padding: 14px; font-size: 1.1rem; font-weight: 700; background: linear-gradient(135deg, var(--maint-color), #0EA5E9); color: white; border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(14,165,233,0.3);">
+                    ➕ إضافة مهمة مجدولة
+                </button>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <h4 style="color: var(--maint-color); margin-bottom: 15px; font-size: 1.1rem;">📋 المهام المجدولة</h4>
+                <div id="scheduled-maintenance-list" style="max-height: 400px; overflow-y: auto;">
                 <!-- سيتم ملؤها ديناميكياً -->
+                </div>
             </div>
             
             <div style="display: flex; gap: 10px;">
-                <button onclick="closeMaintenanceScheduler()" class="glass-btn back-action-btn" style="flex: 1;">إغلاق</button>
+                <button onclick="closeMaintenanceScheduler()" class="glass-btn back-action-btn" style="flex: 1; padding: 12px; font-size: 1rem; font-weight: 700;">إغلاق</button>
             </div>
         </div>
     </div>
 
     <!-- Shift Log Modal -->
     <div id="shift-log-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h3 style="color: #F59E0B; margin-top: 0;">📒 سجل الشفت</h3>
-            
-            <div style="margin-bottom: 15px;">
-                <label class="modal-label">نوع الملاحظة</label>
-                <select id="shift-log-type" style="margin-bottom: 8px;">
-                    <option value="handover">تسليم</option>
-                    <option value="note">ملاحظة</option>
-                    <option value="issue">مشكلة</option>
-                </select>
-                <label class="modal-label">الملاحظات</label>
-                <textarea id="shift-log-notes" rows="4" placeholder="اكتب ملاحظات الشفت..." style="margin-bottom: 8px;"></textarea>
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                <h3 style="color: #F59E0B; margin: 0; font-size: 1.4rem;">📒 سجل الشفت</h3>
+                <button onclick="closeShiftLog()" class="tools-btn" style="font-size: 1.2rem;">✕</button>
             </div>
             
-            <div id="shift-logs-list" style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
-                <h4 style="font-size: 0.9rem; color: var(--text-sec); margin-bottom: 10px;">سجل الشفتات:</h4>
+            <!-- قسم إضافة ملاحظة -->
+            <div style="background: linear-gradient(135deg, rgba(245,158,11,0.05), rgba(217,119,6,0.05)); padding: 20px; border-radius: 16px; border: 2px solid rgba(245,158,11,0.2); margin-bottom: 20px;">
+                <h4 style="color: #F59E0B; margin-top: 0; margin-bottom: 15px; font-size: 1.1rem;">➕ إضافة ملاحظة</h4>
+                <div style="margin-bottom: 12px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.95rem;">📝 نوع الملاحظة</label>
+                    <select id="shift-log-type" 
+                            style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; font-weight: 600;">
+                        <option value="handover">📋 تسليم</option>
+                        <option value="note">📝 ملاحظة</option>
+                        <option value="issue">⚠️ مشكلة</option>
+                </select>
+                </div>
+                <div style="margin-bottom: 12px;">
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.95rem;">📄 الملاحظات</label>
+                    <textarea id="shift-log-notes" rows="3" placeholder="اكتب ملاحظات الشفت..." 
+                              style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 0.95rem; resize: vertical; font-family: 'Tajawal', sans-serif;"></textarea>
+                </div>
+                <button onclick="saveShiftLog()" class="glass-btn submit-action-btn" 
+                        style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #F59E0B, #D97706); color: white; border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(245,158,11,0.3);">
+                    💾 حفظ الملاحظة
+                </button>
+            </div>
+            
+            <!-- قسم الفلاتر -->
+            <div style="background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(139,92,246,0.05)); padding: 20px; border-radius: 16px; border: 2px solid rgba(59,130,246,0.2); margin-bottom: 20px;">
+                <h4 style="color: var(--primary); margin-top: 0; margin-bottom: 15px; font-size: 1.1rem;">🔍 الفلاتر</h4>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 15px;">
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.85rem; margin-bottom: 6px;">⏰ من الساعة</label>
+                        <input type="time" id="shift-filter-time-from" 
+                               style="width: 100%; padding: 10px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem;">
+                    </div>
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.85rem; margin-bottom: 6px;">⏰ إلى الساعة</label>
+                        <input type="time" id="shift-filter-time-to" 
+                               style="width: 100%; padding: 10px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.95rem;">
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 15px;">
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-rooms" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">🏠 عدد الغرف</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-cleaning" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">🧹 التنظيف</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-checkout" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">🚪 الخروج</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-stayover" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">🏠 الساكن</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-qr-requests" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">📱 طلبات QR</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-maintenance" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">🛠️ الصيانة</span>
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; padding: 10px; background: rgba(255,255,255,0.7); border-radius: 8px; cursor: pointer; border: 2px solid var(--border-color);">
+                        <input type="checkbox" id="shift-filter-inspections" checked style="width: 20px; height: 20px; cursor: pointer;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">🔍 طلبات الفحص</span>
+                    </label>
+                </div>
+                
+                <button onclick="applyShiftLogFilters()" class="glass-btn submit-action-btn" 
+                        style="width: 100%; padding: 12px; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #6366F1); color: white; border: none; border-radius: 12px; cursor: pointer; box-shadow: 0 4px 12px rgba(59,130,246,0.3);">
+                    🔍 تطبيق الفلاتر
+                </button>
+            </div>
+            
+            <!-- قسم النتائج -->
+            <div style="margin-bottom: 20px;">
+                <h4 style="color: #F59E0B; margin-bottom: 15px; font-size: 1.1rem;">📊 النتائج</h4>
+                <div id="shift-logs-list" style="max-height: 500px; overflow-y: auto;">
                 <!-- سيتم ملؤها ديناميكياً -->
+                </div>
             </div>
             
             <div style="display: flex; gap: 10px;">
-                <button onclick="saveShiftLog()" class="glass-btn submit-action-btn" style="flex: 1;">💾 حفظ</button>
-                <button onclick="closeShiftLog()" class="glass-btn back-action-btn" style="flex: 1;">إغلاق</button>
+                <button onclick="closeShiftLog()" class="glass-btn back-action-btn" style="flex: 1; padding: 12px; font-size: 1rem; font-weight: 700;">إغلاق</button>
             </div>
         </div>
     </div>
@@ -1130,21 +1435,58 @@
 
     <!-- News Ticker Modal -->
     <div id="news-ticker-modal" class="modal-overlay" style="display: none;">
-        <div class="modal-content">
-            <h3 style="color: var(--primary); margin-top: 0;">📢 محرر الأخبار</h3>
+        <div class="modal-content" style="max-width: 600px;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                <h3 style="color: var(--primary); margin: 0; font-size: 1.4rem;">📢 محرر الأخبار</h3>
+                <button onclick="closeNewsTickerEditor()" class="tools-btn" style="font-size: 1.2rem;">✕</button>
+            </div>
             
+            <div style="background: linear-gradient(135deg, rgba(59,130,246,0.05), rgba(139,92,246,0.05)); padding: 20px; border-radius: 16px; border: 2px solid rgba(59,130,246,0.2); margin-bottom: 20px;">
             <div style="margin-bottom: 15px;">
-                <label class="modal-label">الرسالة</label>
-                <textarea id="news-ticker-message" rows="3" placeholder="اكتب الرسالة التي ستظهر في الشريط..." style="margin-bottom: 8px;"></textarea>
-                <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                    <input type="checkbox" id="news-ticker-enabled" style="width: 20px; height: 20px;">
-                    <span>تفعيل الشريط</span>
+                    <label class="modal-label" style="font-weight: 700; font-size: 0.95rem; margin-bottom: 8px;">📝 نص الرسالة</label>
+                    <textarea id="news-ticker-message" rows="4" placeholder="اكتب الرسالة التي ستظهر في قسم الطلبات...&#10;مثال: ⚠️ تنبيه: سيتم إغلاق المسبح للصيانة يوم الخميس" 
+                              style="width: 100%; padding: 14px; border-radius: 12px; border: 2px solid var(--request-color); background: white; font-size: 0.95rem; font-weight: 500; resize: vertical; font-family: 'Tajawal', sans-serif;"></textarea>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 15px;">
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.95rem; margin-bottom: 8px;">⏰ مدة العرض (ساعات)</label>
+                        <input type="number" id="news-ticker-duration" min="1" max="168" value="24" 
+                               placeholder="مثال: 24" 
+                               style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; text-align: center; font-weight: 600;">
+                        <div style="font-size: 0.75rem; color: var(--text-sec); margin-top: 4px; text-align: center;">سيتم إخفاء الرسالة تلقائياً بعد انتهاء المدة</div>
+                    </div>
+                    <div>
+                        <label class="modal-label" style="font-weight: 700; font-size: 0.95rem; margin-bottom: 8px;">🚨 نوع الرسالة</label>
+                        <select id="news-ticker-type" 
+                                style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); font-size: 1rem; font-weight: 600;">
+                            <option value="normal">📢 عادي</option>
+                            <option value="urgent">🚨 عاجل</option>
+                            <option value="info">ℹ️ معلومات</option>
+                            <option value="warning">⚠️ تحذير</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="display: flex; align-items: center; gap: 12px; padding: 12px; background: rgba(255,255,255,0.7); border-radius: 10px; margin-bottom: 15px;">
+                    <input type="checkbox" id="news-ticker-enabled" 
+                           style="width: 24px; height: 24px; cursor: pointer;">
+                    <label for="news-ticker-enabled" style="font-weight: 700; font-size: 1rem; color: var(--text-main); cursor: pointer; flex: 1;">
+                        ✅ تفعيل الرسالة
                 </label>
+                </div>
+                
+                <div style="background: rgba(255,255,255,0.9); padding: 12px; border-radius: 10px; border: 2px dashed rgba(59,130,246,0.3);">
+                    <div style="font-size: 0.85rem; color: var(--text-sec); font-weight: 600; margin-bottom: 6px;">💡 معاينة:</div>
+                    <div id="news-ticker-preview" style="padding: 10px; border-radius: 8px; background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); border: 2px solid rgba(59,130,246,0.3); font-size: 0.9rem; min-height: 40px; display: flex; align-items: center;">
+                        <span style="color: var(--text-sec);">اكتب الرسالة لرؤية المعاينة...</span>
+                    </div>
+                </div>
             </div>
             
             <div style="display: flex; gap: 10px;">
-                <button onclick="saveNewsTicker()" class="glass-btn submit-action-btn" style="flex: 1;">💾 حفظ</button>
-                <button onclick="closeNewsTickerEditor()" class="glass-btn back-action-btn" style="flex: 1;">إغلاق</button>
+                <button onclick="saveNewsTicker()" class="glass-btn submit-action-btn" style="flex: 1; padding: 14px; font-size: 1.1rem; font-weight: 700;">💾 حفظ</button>
+                <button onclick="closeNewsTickerEditor()" class="glass-btn back-action-btn" style="flex: 1; padding: 14px; font-size: 1.1rem; font-weight: 700;">إغلاق</button>
             </div>
         </div>
     </div>

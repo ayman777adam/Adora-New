@@ -17,6 +17,11 @@
     
     let guestConfig = null;
     let currentRoom = null;
+    // ✅ جلب رقم الغرفة من URL تلقائياً
+    const roomFromUrl = urlParams.get('room');
+    if (roomFromUrl) {
+        currentRoom = roomFromUrl;
+    }
     let db = null;
     let storage = null;
     let unsubscribeSettings = null;
@@ -214,7 +219,41 @@
     // == Apply Settings to DOM ===================
     // ============================================
     
+    // متغير لتخزين إعدادات الأوقات
+    let requestCooldowns = {
+        cleaning: 12, // 12 ساعة افتراضي
+        cleaningFrom: '08:00', // أوقات العمل للنظافة الفورية
+        cleaningTo: '22:00',
+        maintenanceFrom: '08:00', // أوقات العمل للصيانة الفورية
+        maintenanceTo: '22:00',
+        maintenance24h: false, // مؤشر 24 ساعة للصيانة
+        requestsFrom: '08:00', // أوقات العمل للطلبات الفورية
+        requestsTo: '22:00',
+        requests24h: false, // مؤشر 24 ساعة للطلبات
+        fnbFrom: '08:00', // أوقات العمل لخدمات الكافي شوب
+        fnbTo: '22:00',
+        fnb24h: false // مؤشر 24 ساعة للكافي شوب
+    };
+    
     function applySettings(config) {
+        // حفظ إعدادات الأوقات
+        if (config.requestCooldowns) {
+            requestCooldowns = {
+                cleaning: config.requestCooldowns.cleaning || 12,
+                cleaningFrom: config.requestCooldowns.cleaningFrom || '08:00',
+                cleaningTo: config.requestCooldowns.cleaningTo || '22:00',
+                maintenanceFrom: config.requestCooldowns.maintenanceFrom || '08:00',
+                maintenanceTo: config.requestCooldowns.maintenanceTo || '22:00',
+                maintenance24h: config.requestCooldowns.maintenance24h || false,
+                requestsFrom: config.requestCooldowns.requestsFrom || '08:00',
+                requestsTo: config.requestCooldowns.requestsTo || '22:00',
+                requests24h: config.requestCooldowns.requests24h || false,
+                fnbFrom: config.requestCooldowns.fnbFrom || '08:00',
+                fnbTo: config.requestCooldowns.fnbTo || '22:00',
+                fnb24h: config.requestCooldowns.fnb24h || false
+            };
+        }
+        
         // دمج الإعدادات مع القيم الافتراضية لضمان وجود المسميات الجديدة
         const mergedConfig = {
             ...DEFAULT_CONFIG,
@@ -274,7 +313,7 @@
         setTimeout(updateHeader, 500);
         setTimeout(updateHeader, 1000);
         
-        // تطبيق اللوجو
+        // تطبيق اللوجو في الصفحة الرئيسية
         if (mergedConfig.logoUrl) {
             const logoEl = document.getElementById('guest-logo');
             if (logoEl) {
@@ -283,6 +322,15 @@
                 logoEl.onerror = function() {
                     this.style.display = 'none';
                 };
+            }
+        }
+        
+        // ✅ تطبيق اللوجو في صفحة الدخول (Welcome Screen)
+        if (mergedConfig.logoUrl) {
+            const welcomeLogoEl = document.querySelector('.guest-welcome-logo');
+            if (welcomeLogoEl) {
+                // استبدال الأيقونة باللوجو
+                welcomeLogoEl.innerHTML = `<img src="${mergedConfig.logoUrl}" alt="Logo" style="max-width: 120px; max-height: 120px; border-radius: 12px; object-fit: contain;" onerror="this.parentElement.innerHTML='🏨';">`;
             }
         }
         
@@ -356,17 +404,29 @@
         
         container.innerHTML = '';
         
-        // تصفية وترتيب التبويبات
+        // ✅ إعادة تصميم كامل - تبويبات بسيطة وواضحة
         const visibleTabs = tabs
             .filter(tab => tab.visible !== false)
             .sort((a, b) => (a.order || 0) - (b.order || 0));
         
+        // ✅ تصميم جديد: تبويبات في صف واحد مع أيقونات كبيرة
         visibleTabs.forEach((tab, index) => {
             const btn = document.createElement('button');
-            btn.className = 'guest-tab-btn';
+            btn.className = 'guest-tab-btn-new';
+            btn.dataset.tabId = tab.id;
             if (index === 0) btn.classList.add('active');
             
-            btn.textContent = tab.title || (tab.icon + ' ' + tab.id);
+            // ✅ تصميم جديد: أيقونة كبيرة + نص قصير
+            const icon = tab.icon || '📋';
+            const title = tab.title || tab.id;
+            // استخراج النص بعد الأيقونة
+            const titleText = title.replace(/^[^\s]+\s/, ''); // إزالة الأيقونة من البداية
+            
+            btn.innerHTML = `
+                <div style="font-size: 1.8rem; margin-bottom: 4px;">${icon}</div>
+                <div style="font-size: 0.85rem; font-weight: 700; line-height: 1.2;">${titleText}</div>
+            `;
+            
             btn.onclick = () => openTab(tab, btn);
             
             container.appendChild(btn);
@@ -383,8 +443,8 @@
     // ============================================
     
     function openTab(tab, btnElement) {
-        // تحديث الأزرار
-        document.querySelectorAll('.guest-tab-btn').forEach(b => b.classList.remove('active'));
+        // ✅ تحديث الأزرار (دعم التصميم الجديد والقديم)
+        document.querySelectorAll('.guest-tab-btn, .guest-tab-btn-new').forEach(b => b.classList.remove('active'));
         if (btnElement) btnElement.classList.add('active');
         
         const content = document.getElementById('guest-content');
@@ -457,7 +517,6 @@
             <h3 style="margin-top: 0; color: var(--guest-primary); font-size: 1.5rem; margin-bottom: 20px;">
                 ${tab.title || tab.icon + ' ' + tab.id}
             </h3>
-            ${isCleaning ? '' : `
             ${!isCleaning ? `
             <div class="guest-form-group">
                 <label class="guest-form-label">${isMaintenance ? 'وصف المشكلة *' : 'تفاصيل الطلب *'}</label>
@@ -473,7 +532,6 @@
                 </div>
             </div>
             ` : ''}
-            `}
             ${isMaintenance ? `
             <div class="guest-form-group">
                 <label class="guest-form-label">📷 صورة (اختياري)</label>
@@ -904,7 +962,8 @@
         const details = `🛒 طلب من الكافي شوب:\n\n${itemsList}${total > 0 ? `\n\n💰 الإجمالي: ${total.toFixed(2)} ريال` : ''}`;
         
         // إرسال الطلب
-        sendGuestRequest('fnb', details, null, true);
+        const room = currentRoom || '--';
+        sendGuestRequest(room, 'fnb', details, 'instant', null);
         
         // مسح السلة بعد الإرسال
         DEFAULT_CONFIG.fnbCart = [];
@@ -1315,7 +1374,7 @@
     }
     
     // التحقق من إدخال التاريخ والوقت
-    window.checkScheduleInputs = function() {
+    window.checkScheduleInputs = async function() {
         const date = document.getElementById('guest-schedule-date');
         const time = document.getElementById('guest-schedule-time');
         const actionButtons = document.getElementById('guest-action-buttons');
@@ -1336,6 +1395,115 @@
         
         // التحقق من أن الوقت مملوء (الوقت إجباري)
         if (time.value) {
+            // ✅ التحقق من 12 ساعة للتنظيف عند الجدولة
+            const tabId = document.querySelector('.guest-tab-btn-new.active')?.dataset.tabId;
+            if (tabId === 'cleaning' && typeof db !== 'undefined' && db && db.collection) {
+                const roomNum = parseInt(currentRoom, 10);
+                if (!isNaN(roomNum) && roomNum > 0) {
+                    const cleaningCooldownHours = requestCooldowns.cleaning || 12;
+                    const COOLDOWN_TIME = cleaningCooldownHours * 60 * 60 * 1000;
+                    
+                    // جمع جميع مصادر آخر تنظيف
+                    let allLastCleanings = [];
+                    
+                    // البحث في guestRequests
+                    if (guestIdentity || guestPhone) {
+                        let lastGuestCleaningQuery = null;
+                        if (guestIdentity) {
+                            lastGuestCleaningQuery = db.collection('guestRequests')
+                                .where('requestType', '==', 'cleaning')
+                                .where('fromGuest', '==', true)
+                                .where('guestIdentity', '==', guestIdentity)
+                                .get();
+                        } else if (guestPhone) {
+                            lastGuestCleaningQuery = db.collection('guestRequests')
+                                .where('requestType', '==', 'cleaning')
+                                .where('fromGuest', '==', true)
+                                .where('guestPhone', '==', guestPhone)
+                                .get();
+                        }
+                        
+                        if (lastGuestCleaningQuery) {
+                            const guestSnapshot = await lastGuestCleaningQuery;
+                            if (!guestSnapshot.empty) {
+                                guestSnapshot.docs.forEach(doc => {
+                                    const data = doc.data();
+                                    const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : (data.finishTime || data.startTime);
+                                    if (finishTime) {
+                                        allLastCleanings.push({ time: finishTime });
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    
+                    // البحث في log collection
+                    const logSnapshot = await db.collection('log')
+                        .where('num', '==', roomNum)
+                        .get();
+                    
+                    if (!logSnapshot.empty) {
+                        logSnapshot.docs.forEach(doc => {
+                            const data = doc.data();
+                            const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : data.finishTime;
+                            if (finishTime) {
+                                allLastCleanings.push({ time: finishTime });
+                            }
+                        });
+                    }
+                    
+                    // البحث في guestRequests للغرفة مباشرة
+                    const roomCleaningQuery = await db.collection('guestRequests')
+                        .where('requestType', '==', 'cleaning')
+                        .where('num', '==', roomNum)
+                        .where('fromGuest', '==', true)
+                        .get();
+                    
+                    if (!roomCleaningQuery.empty) {
+                        roomCleaningQuery.docs.forEach(doc => {
+                            const data = doc.data();
+                            const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : (data.finishTime || data.startTime);
+                            if (finishTime) {
+                                const exists = allLastCleanings.find(c => c.time === finishTime);
+                                if (!exists) {
+                                    allLastCleanings.push({ time: finishTime });
+                                }
+                            }
+                        });
+                    }
+                    
+                    // ترتيب واختيار الأحدث
+                    if (allLastCleanings.length > 0) {
+                        allLastCleanings.sort((a, b) => b.time - a.time);
+                        const lastCleaningTime = allLastCleanings[0].time;
+                        const deadline = lastCleaningTime + COOLDOWN_TIME;
+                        const selectedDateTime = new Date(`${date.value}T${time.value}`).getTime();
+                        
+                        if (selectedDateTime < deadline) {
+                            // الموعد المحدد قبل انتهاء المهلة - منع الجدولة
+                            const nextAvailableTime = new Date(deadline);
+                            const nextDateStr = nextAvailableTime.toISOString().split('T')[0];
+                            const nextTimeStr = nextAvailableTime.toLocaleTimeString('ar-EG', { 
+                                hour: '2-digit', 
+                                minute: '2-digit', 
+                                hour12: false 
+                            }).replace(' ', '');
+                            
+                            window.showGuestAlert(
+                                `⏳ لا يمكن جدولة تنظيف قبل مرور ${cleaningCooldownHours} ساعة من آخر تنظيف\n\n` +
+                                `يرجى اختيار موعد بعد الساعة ${nextTimeStr} في ${nextDateStr}`,
+                                '⏰ وقت الجدولة'
+                            );
+                            
+                            // تعيين التاريخ والوقت الأدنى المسموح
+                            date.value = nextDateStr;
+                            time.value = nextTimeStr;
+                            return;
+                        }
+                    }
+                }
+            }
+            
             // إخفاء الأزرار العادية وإظهار زر المجدول
             actionButtons.style.display = 'none';
             scheduledButton.style.display = 'flex';
@@ -1346,11 +1514,408 @@
         }
     };
     
-    window.sendGuestRequestNow = function(category, itemName, itemId, isInstant = true, buttonElement = null) {
+    // ✅ دالة للتحقق من أوقات العمل
+    function isWithinWorkingHours(fromTime, toTime) {
+        if (!fromTime || !toTime) return true; // إذا لم تكن محددة، السماح دائماً
+        
+        const now = new Date();
+        const currentHour = now.getHours();
+        const currentMinute = now.getMinutes();
+        const currentTimeMinutes = currentHour * 60 + currentMinute;
+        
+        const [fromHour, fromMin] = fromTime.split(':').map(Number);
+        const [toHour, toMin] = toTime.split(':').map(Number);
+        const fromTimeMinutes = fromHour * 60 + fromMin;
+        const toTimeMinutes = toHour * 60 + toMin;
+        
+        // إذا كان الوقت من > إلى (يعني يعبر منتصف الليل)
+        if (fromTimeMinutes > toTimeMinutes) {
+            return currentTimeMinutes >= fromTimeMinutes || currentTimeMinutes <= toTimeMinutes;
+        } else {
+            return currentTimeMinutes >= fromTimeMinutes && currentTimeMinutes <= toTimeMinutes;
+        }
+    }
+    
+    window.sendGuestRequestNow = async function(category, itemName, itemId, isInstant = true, buttonElement = null) {
         const room = currentRoom || '--';
         let details = '';
         let mode = isInstant ? 'instant' : 'scheduled';
         let scheduledTime = null;
+        
+        // ✅ متغير لتخزين حالة الطارئ
+        let isEmergencyRequest = false;
+        
+        // ✅ أولاً: التحقق من 12 ساعة للتنظيف (يجب أن يحدث قبل التحقق من أوقات العمل)
+        if (category === 'cleaning' && isInstant) {
+            const actualRoom = room || currentRoom || (() => {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('room') || null;
+            })();
+            
+            if (actualRoom && actualRoom !== '--') {
+                const roomNum = parseInt(actualRoom, 10);
+                if (!isNaN(roomNum) && roomNum > 0 && typeof db !== 'undefined' && db && db.collection) {
+                    const cleaningCooldownHours = requestCooldowns.cleaning || 12;
+                    const COOLDOWN_TIME = cleaningCooldownHours * 60 * 60 * 1000;
+                    
+                    // ✅ التحقق من 12 ساعة دائماً (سواء كانت الغرفة موجودة في rooms أم لا)
+                    // جمع جميع مصادر آخر تنظيف: guestRequests + log collection
+                    let allLastCleanings = [];
+                    
+                    // 1. البحث في guestRequests (إذا كانت هناك هوية)
+                    if (guestIdentity || guestPhone) {
+                        let lastGuestCleaningQuery = null;
+                        if (guestIdentity) {
+                            lastGuestCleaningQuery = db.collection('guestRequests')
+                                .where('requestType', '==', 'cleaning')
+                                .where('fromGuest', '==', true)
+                                .where('guestIdentity', '==', guestIdentity)
+                                .get();
+                        } else if (guestPhone) {
+                            lastGuestCleaningQuery = db.collection('guestRequests')
+                                .where('requestType', '==', 'cleaning')
+                                .where('fromGuest', '==', true)
+                                .where('guestPhone', '==', guestPhone)
+                                .get();
+                        }
+                        
+                        if (lastGuestCleaningQuery) {
+                            const guestSnapshot = await lastGuestCleaningQuery;
+                            if (!guestSnapshot.empty) {
+                                guestSnapshot.docs.forEach(doc => {
+                                    const data = doc.data();
+                                    const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : (data.finishTime || data.startTime);
+                                    if (finishTime) {
+                                        allLastCleanings.push({
+                                            time: finishTime,
+                                            source: 'guestRequest',
+                                            data: data
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    
+                    // 2. البحث في log collection للغرفة (دائماً)
+                    const logSnapshot = await db.collection('log')
+                        .where('num', '==', roomNum)
+                        .get();
+                    
+                    if (!logSnapshot.empty) {
+                        logSnapshot.docs.forEach(doc => {
+                            const data = doc.data();
+                            const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : data.finishTime;
+                            if (finishTime) {
+                                allLastCleanings.push({
+                                    time: finishTime,
+                                    source: 'log',
+                                    data: data
+                                });
+                            }
+                        });
+                    }
+                    
+                    // 3. البحث في guestRequests للغرفة مباشرة (بغض النظر عن الهوية)
+                    const roomCleaningQuery = await db.collection('guestRequests')
+                        .where('requestType', '==', 'cleaning')
+                        .where('num', '==', roomNum)
+                        .where('fromGuest', '==', true)
+                        .get();
+                    
+                    if (!roomCleaningQuery.empty) {
+                        roomCleaningQuery.docs.forEach(doc => {
+                            const data = doc.data();
+                            const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : (data.finishTime || data.startTime);
+                            if (finishTime) {
+                                // تجنب التكرار
+                                const exists = allLastCleanings.find(c => c.time === finishTime && c.source === 'guestRequest');
+                                if (!exists) {
+                                    allLastCleanings.push({
+                                        time: finishTime,
+                                        source: 'guestRequest',
+                                        data: data
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    
+                    // 4. ترتيب جميع النتائج واختيار الأحدث
+                    if (allLastCleanings.length > 0) {
+                        allLastCleanings.sort((a, b) => b.time - a.time);
+                        const lastCleaning = allLastCleanings[0];
+                        const lastCleaningTime = lastCleaning.time;
+                        
+                        if (lastCleaningTime) {
+                            const deadline = lastCleaningTime + COOLDOWN_TIME;
+                            const now = Date.now();
+                            
+                            if (now < deadline) {
+                                // المهلة لم تنتهِ بعد - منع الإرسال
+                                const nextAvailableTime = new Date(deadline);
+                                const nextTimeStr = nextAvailableTime.toLocaleTimeString('ar-EG', { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit', 
+                                    hour12: true 
+                                });
+                                
+                                const remainingMs = deadline - now;
+                                const remainingHours = Math.floor(remainingMs / (60 * 60 * 1000));
+                                const remainingMins = Math.floor((remainingMs % (60 * 60 * 1000)) / 60000);
+                                
+                                // تصحيح: إذا كانت الدقائق 60 أو أكثر، نحولها إلى ساعات
+                                let finalHours = remainingHours;
+                                let finalMins = remainingMins;
+                                if (finalMins >= 60) {
+                                    finalHours += Math.floor(finalMins / 60);
+                                    finalMins = finalMins % 60;
+                                }
+                                
+                                let message = `⏳ نعتذر، لا يمكن إرسال طلب تنظيف الآن\n\n`;
+                                
+                                if (finalHours > 0 && finalMins > 0) {
+                                    message += `يرجى الانتظار ${finalHours} ساعة و ${finalMins} دقيقة\n`;
+                                } else if (finalHours > 0) {
+                                    message += `يرجى الانتظار ${finalHours} ساعة\n`;
+                                } else {
+                                    message += `يرجى الانتظار ${finalMins} دقيقة\n`;
+                                }
+                                
+                                message += `\nيمكنك إرسال طلب جديد بعد الساعة ${nextTimeStr}`;
+                                
+                                window.showGuestAlert(message, '⏰ وقت الانتظار');
+                                return; // منع الإرسال
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // ✅ ثانياً: التحقق من أوقات العمل للطلبات الفورية (النظافة، الصيانة، والطلبات)
+        // ✅ checkout متاح 24 ساعة - لا يتم التحقق من أوقات العمل
+        if (isInstant && category !== 'checkout') {
+            let workingHoursFrom = null;
+            let workingHoursTo = null;
+            let categoryName = '';
+            let is24h = false;
+            
+            if (category === 'cleaning') {
+                workingHoursFrom = requestCooldowns.cleaningFrom || '08:00';
+                workingHoursTo = requestCooldowns.cleaningTo || '22:00';
+                categoryName = 'النظافة';
+                is24h = false; // النظافة لا تدعم 24 ساعة
+            } else if (category === 'maintenance') {
+                is24h = requestCooldowns.maintenance24h || false;
+                if (!is24h) {
+                    workingHoursFrom = requestCooldowns.maintenanceFrom || '08:00';
+                    workingHoursTo = requestCooldowns.maintenanceTo || '22:00';
+                }
+                categoryName = 'الصيانة';
+            } else if (category === 'requests' || category === 'service') {
+                is24h = requestCooldowns.requests24h || false;
+                if (!is24h) {
+                    workingHoursFrom = requestCooldowns.requestsFrom || '08:00';
+                    workingHoursTo = requestCooldowns.requestsTo || '22:00';
+                }
+                categoryName = 'الطلبات';
+            } else if (category === 'fnb') {
+                is24h = requestCooldowns.fnb24h || false;
+                if (!is24h) {
+                    workingHoursFrom = requestCooldowns.fnbFrom || '08:00';
+                    workingHoursTo = requestCooldowns.fnbTo || '22:00';
+                }
+                categoryName = 'خدمات الكافي شوب';
+            }
+            
+            // إذا لم يكن 24 ساعة وكان خارج أوقات العمل، نعرض رسالة اعتذار مهذبة
+            if (!is24h && workingHoursFrom && workingHoursTo && !isWithinWorkingHours(workingHoursFrom, workingHoursTo)) {
+                const fromTimeStr = workingHoursFrom;
+                const toTimeStr = workingHoursTo;
+                
+                // عرض نافذة مخصصة مع خيارات
+                const userChoice = await new Promise((resolve) => {
+                    // إزالة أي نافذة موجودة مسبقاً
+                    const existing = document.getElementById('guest-working-hours-modal');
+                    if (existing) existing.remove();
+                    
+                    const overlay = document.createElement('div');
+                    overlay.id = 'guest-working-hours-modal';
+                    const isMobileModal = window.innerWidth <= 768;
+                    overlay.style.cssText = `
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.4);
+                        backdrop-filter: blur(8px);
+                        -webkit-backdrop-filter: blur(8px);
+                        z-index: 10002;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        padding: ${isMobileModal ? '15px' : '20px'};
+                        animation: fadeIn 0.2s ease;
+                        box-sizing: border-box;
+                    `;
+                    
+                    const dialog = document.createElement('div');
+                    dialog.style.cssText = `
+                        background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95));
+                        backdrop-filter: blur(20px);
+                        -webkit-backdrop-filter: blur(20px);
+                        border-radius: ${isMobileModal ? '20px' : '24px'};
+                        padding: ${isMobileModal ? '20px' : '32px'};
+                        max-width: ${isMobileModal ? '100%' : '480px'};
+                        width: 100%;
+                        max-height: ${isMobileModal ? '90vh' : 'auto'};
+                        overflow-y: auto;
+                        box-shadow: 0 20px 60px rgba(0, 172, 193, 0.3), 0 0 0 1px rgba(0, 172, 193, 0.1);
+                        border: 2px solid rgba(0, 172, 193, 0.2);
+                        animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+                        box-sizing: border-box;
+                    `;
+                    
+                    dialog.innerHTML = `
+                        <div style="text-align: center; margin-bottom: ${isMobileModal ? '20px' : '24px'};">
+                            <div style="
+                                width: ${isMobileModal ? '56px' : '64px'};
+                                height: ${isMobileModal ? '56px' : '64px'};
+                                background: linear-gradient(135deg, #00ACC1, #0EA5E9);
+                                border-radius: 50%;
+                                display: flex;
+                                align-items: center;
+                                justify-content: center;
+                                margin: 0 auto ${isMobileModal ? '12px' : '16px'};
+                                box-shadow: 0 4px 20px rgba(0, 172, 193, 0.4);
+                            ">
+                                <span style="color: white; font-size: ${isMobileModal ? '28px' : '32px'};">
+                                    ⏰
+                                </span>
+                            </div>
+                            <h3 style="color: #1E293B; font-size: ${isMobileModal ? '1.2rem' : '1.4rem'}; font-weight: 800; margin: 0 0 ${isMobileModal ? '10px' : '12px'} 0; font-family: 'Tajawal', sans-serif; line-height: 1.3;">
+                                نعتذر بشدة 🙏
+                            </h3>
+                            <p style="color: #475569; font-size: ${isMobileModal ? '0.95rem' : '1.05rem'}; line-height: 1.7; margin: 0 0 ${isMobileModal ? '6px' : '8px'} 0; font-family: 'Tajawal', sans-serif;">
+                                عامل ${categoryName} غير متوفر حالياً لانتهاء وقت الدوام الرسمي.
+                            </p>
+                            <div style="
+                                background: linear-gradient(135deg, rgba(0, 172, 193, 0.1), rgba(14, 165, 233, 0.1));
+                                padding: ${isMobileModal ? '10px 12px' : '12px 16px'};
+                                border-radius: ${isMobileModal ? '10px' : '12px'};
+                                margin: ${isMobileModal ? '12px' : '16px'} 0;
+                                border-right: 3px solid #00ACC1;
+                            ">
+                                <p style="color: #1E293B; font-size: ${isMobileModal ? '0.85rem' : '0.95rem'}; margin: 0; font-weight: 600; font-family: 'Tajawal', sans-serif;">
+                                    ⏰ أوقات العمل الرسمية:<br>
+                                    <span style="color: #00ACC1; font-weight: 700;">من ${fromTimeStr} إلى ${toTimeStr}</span>
+                                </p>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: ${isMobileModal ? '10px' : '12px'};">
+                            <button id="emergency-btn" style="
+                                width: 100%;
+                                padding: ${isMobileModal ? '14px 20px' : '16px 24px'};
+                                background: linear-gradient(135deg, #DC2626, #EF4444);
+                                color: white;
+                                border: none;
+                                border-radius: ${isMobileModal ? '12px' : '14px'};
+                                font-size: ${isMobileModal ? '0.95rem' : '1.05rem'};
+                                font-weight: 700;
+                                cursor: pointer;
+                                transition: all 0.3s ease;
+                                box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4);
+                                font-family: 'Tajawal', sans-serif;
+                            "
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(220, 38, 38, 0.5)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 16px rgba(220, 38, 38, 0.4)';">
+                                🚨 طلب طارئ (فوري)
+                            </button>
+                            <button id="schedule-btn" style="
+                                width: 100%;
+                                padding: ${isMobileModal ? '14px 20px' : '16px 24px'};
+                                background: linear-gradient(135deg, #00ACC1, #0EA5E9);
+                                color: white;
+                                border: none;
+                                border-radius: ${isMobileModal ? '12px' : '14px'};
+                                font-size: ${isMobileModal ? '0.95rem' : '1.05rem'};
+                                font-weight: 700;
+                                cursor: pointer;
+                                transition: all 0.3s ease;
+                                box-shadow: 0 4px 16px rgba(0, 172, 193, 0.4);
+                                font-family: 'Tajawal', sans-serif;
+                            "
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(0, 172, 193, 0.5)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 16px rgba(0, 172, 193, 0.4)';">
+                                📅 جدولة للغد
+                            </button>
+                            <button id="cancel-btn" style="
+                                width: 100%;
+                                padding: ${isMobileModal ? '12px 20px' : '14px 24px'};
+                                background: rgba(255, 255, 255, 0.9);
+                                color: #64748B;
+                                border: 2px solid rgba(0, 172, 193, 0.2);
+                                border-radius: ${isMobileModal ? '12px' : '14px'};
+                                font-size: ${isMobileModal ? '0.9rem' : '1rem'};
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: all 0.3s ease;
+                                font-family: 'Tajawal', sans-serif;
+                            "
+                            onmouseover="this.style.background='rgba(0, 172, 193, 0.1)'; this.style.borderColor='rgba(0, 172, 193, 0.4)'; this.style.color='#1E293B';"
+                            onmouseout="this.style.background='rgba(255, 255, 255, 0.9)'; this.style.borderColor='rgba(0, 172, 193, 0.2)'; this.style.color='#64748B';">
+                                إلغاء
+                            </button>
+                        </div>
+                    `;
+                    
+                    overlay.appendChild(dialog);
+                    document.body.appendChild(overlay);
+                    
+                    // معالجة الأزرار
+                    document.getElementById('emergency-btn').addEventListener('click', () => {
+                        overlay.remove();
+                        resolve('emergency');
+                    });
+                    
+                    document.getElementById('schedule-btn').addEventListener('click', () => {
+                        overlay.remove();
+                        resolve('schedule');
+                    });
+                    
+                    document.getElementById('cancel-btn').addEventListener('click', () => {
+                        overlay.remove();
+                        resolve('cancel');
+                    });
+                    
+                    // إغلاق عند النقر خارج النافذة
+                    overlay.addEventListener('click', (e) => {
+                        if (e.target === overlay) {
+                            overlay.remove();
+                            resolve('cancel');
+                        }
+                    });
+                });
+                
+                if (userChoice === 'emergency') {
+                    // ✅ المستخدم اختار طلب طارئ - إرسال الطلب كطلب طارئ
+                    isEmergencyRequest = true;
+                    mode = 'instant';
+                } else if (userChoice === 'schedule') {
+                    // ✅ المستخدم اختار الجدولة - جدولة للغد في بداية وقت العمل
+                    const [hours, minutes] = workingHoursFrom.split(':').map(Number);
+                    scheduledTime = new Date();
+                    scheduledTime.setHours(hours, minutes, 0, 0);
+                    scheduledTime.setDate(scheduledTime.getDate() + 1); // للغد
+                    mode = 'scheduled';
+                } else {
+                    // المستخدم ألغى - منع الإرسال
+                    return;
+                }
+            }
+        }
         
         // الحصول على الزر المضغوط
         if (!buttonElement) {
@@ -1403,6 +1968,118 @@
             if (time) {
                 mode = 'scheduled';
                 scheduledTime = new Date(`${date}T${time}`).getTime();
+                
+                // ✅ التحقق من 12 ساعة للتنظيف عند الإرسال (تحقق إضافي)
+                if (category === 'cleaning' && typeof db !== 'undefined' && db && db.collection) {
+                    const roomNum = parseInt(room || currentRoom, 10);
+                    if (!isNaN(roomNum) && roomNum > 0) {
+                        try {
+                            const cleaningCooldownHours = requestCooldowns.cleaning || 12;
+                            const COOLDOWN_TIME = cleaningCooldownHours * 60 * 60 * 1000;
+                            
+                            // جمع جميع مصادر آخر تنظيف
+                            let allLastCleanings = [];
+                            
+                            // البحث في guestRequests
+                            if (guestIdentity || guestPhone) {
+                                let lastGuestCleaningQuery = null;
+                                if (guestIdentity) {
+                                    lastGuestCleaningQuery = await db.collection('guestRequests')
+                                        .where('requestType', '==', 'cleaning')
+                                        .where('fromGuest', '==', true)
+                                        .where('guestIdentity', '==', guestIdentity)
+                                        .get();
+                                } else if (guestPhone) {
+                                    lastGuestCleaningQuery = await db.collection('guestRequests')
+                                        .where('requestType', '==', 'cleaning')
+                                        .where('fromGuest', '==', true)
+                                        .where('guestPhone', '==', guestPhone)
+                                        .get();
+                                }
+                                
+                                if (lastGuestCleaningQuery && !lastGuestCleaningQuery.empty) {
+                                    lastGuestCleaningQuery.docs.forEach(doc => {
+                                        const data = doc.data();
+                                        const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : (data.finishTime || data.startTime);
+                                        if (finishTime) {
+                                            allLastCleanings.push({ time: finishTime });
+                                        }
+                                    });
+                                }
+                            }
+                            
+                            // البحث في log collection
+                            const logSnapshot = await db.collection('log')
+                                .where('num', '==', roomNum)
+                                .get();
+                            
+                            if (!logSnapshot.empty) {
+                                logSnapshot.docs.forEach(doc => {
+                                    const data = doc.data();
+                                    const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : data.finishTime;
+                                    if (finishTime) {
+                                        allLastCleanings.push({ time: finishTime });
+                                    }
+                                });
+                            }
+                            
+                            // البحث في guestRequests للغرفة مباشرة
+                            const roomCleaningQuery = await db.collection('guestRequests')
+                                .where('requestType', '==', 'cleaning')
+                                .where('num', '==', roomNum)
+                                .where('fromGuest', '==', true)
+                                .get();
+                            
+                            if (!roomCleaningQuery.empty) {
+                                roomCleaningQuery.docs.forEach(doc => {
+                                    const data = doc.data();
+                                    const finishTime = data.finishTime?.toMillis ? data.finishTime.toMillis() : (data.finishTime || data.startTime);
+                                    if (finishTime) {
+                                        const exists = allLastCleanings.find(c => c.time === finishTime);
+                                        if (!exists) {
+                                            allLastCleanings.push({ time: finishTime });
+                                        }
+                                    }
+                                });
+                            }
+                            
+                            // ترتيب واختيار الأحدث
+                            if (allLastCleanings.length > 0) {
+                                allLastCleanings.sort((a, b) => b.time - a.time);
+                                const lastCleaningTime = allLastCleanings[0].time;
+                                const deadline = lastCleaningTime + COOLDOWN_TIME;
+                                
+                                if (scheduledTime < deadline) {
+                                    // الموعد المحدد قبل انتهاء المهلة - منع الجدولة
+                                    const nextAvailableTime = new Date(deadline);
+                                    const nextDateStr = nextAvailableTime.toISOString().split('T')[0];
+                                    const nextTimeStr = nextAvailableTime.toLocaleTimeString('ar-EG', { 
+                                        hour: '2-digit', 
+                                        minute: '2-digit', 
+                                        hour12: false 
+                                    }).replace(' ', '');
+                                    
+                                    window.showGuestAlert(
+                                        `⏳ لا يمكن جدولة تنظيف قبل مرور ${cleaningCooldownHours} ساعة من آخر تنظيف\n\n` +
+                                        `يرجى اختيار موعد بعد الساعة ${nextTimeStr} في ${nextDateStr}`,
+                                        '⏰ وقت الجدولة'
+                                    );
+                                    
+                                    // تعيين التاريخ والوقت الأدنى المسموح
+                                    const dateInput = document.getElementById('guest-schedule-date');
+                                    const timeInput = document.getElementById('guest-schedule-time');
+                                    if (dateInput) dateInput.value = nextDateStr;
+                                    if (timeInput) timeInput.value = nextTimeStr;
+                                    
+                                    return; // منع الإرسال
+                                }
+                            }
+                        } catch (error) {
+                            console.error('Error checking cleaning cooldown for scheduling:', error);
+                            // في حالة الخطأ، نتابع الإرسال (fail-open)
+                        }
+                    }
+                }
             }
         }
         
@@ -1472,99 +2149,87 @@
             return;
         }
         
-        // استخدام actualRoom في باقي الكود
-        const roomToUse = actualRoom;
-        
         // التحقق من الطلبات المكررة للنظافة فقط
         if (category === 'cleaning') {
-            // التحقق من وجود طلب نظافة مفتوح للغرفة نفسها
-            // نستخدم استعلام بسيط بدون orderBy لتجنب الحاجة لـ index
+            // ✅ فحص أولي: التحقق من أن الغرفة ليست مكتملة (في collection rooms)
             if (typeof db !== 'undefined' && db && db.collection) {
-                // جلب جميع طلبات النظافة للغرفة (بدون فلتر status لتجنب المشاكل)
-                db.collection('guestRequests')
+                // التحقق من وجود الغرفة في collection rooms (إذا كانت موجودة، فهي نشطة)
+                db.collection('rooms')
                     .where('num', '==', roomNum)
-                    .where('requestType', '==', 'cleaning')
+                    .limit(1)
                     .get()
-                    .then(snapshot => {
-                        // فلترة محلياً بنفس الفلتر المستخدم في script2.js
-                        // في script2.js: r.status !== 'scheduled' && r.status !== 'completed' && r.requestType === 'cleaning' && r.roomTracking
-                        let hasActiveCleaning = false;
-                        let hasScheduledCleaning = false;
-                        
-                        snapshot.forEach(doc => {
-                            const data = doc.data();
-                            
-                            // الفلتر المستخدم في script2.js للطلبات النشطة في createRoomCard (السطر 2814):
-                            // r.num == room.num && r.status !== 'scheduled' && r.requestType === 'cleaning' && r.roomTracking
-                            // ملاحظة: لا يتحقق من 'completed' أو 'finishTime' في createRoomCard
-                            const matchesActiveFilter = 
-                                data.requestType === 'cleaning' &&
-                                data.roomTracking === true &&
-                                data.status !== 'scheduled';
-                                // لا نتحقق من 'completed' أو 'finishTime' لأن createRoomCard لا يتحقق منها
-                            
-                            // لكن يجب أن نتحقق من أن الطلب ليس مكتملاً فعلياً (لأن الطلبات المكتملة لا يجب أن تمنع طلبات جديدة)
-                            // نستخدم نفس الفلتر المستخدم في renderGuestRequests (السطر 3113):
-                            // r.status !== 'scheduled' && r.status !== 'completed' && r.requestType === 'cleaning' && r.roomTracking
-                            const isActuallyActive = 
-                                data.requestType === 'cleaning' &&
-                                data.roomTracking === true &&
-                                data.status !== 'scheduled' &&
-                                data.status !== 'completed';
-                            
-                            // الفلتر المستخدم في script2.js للطلبات المجدولة:
-                            // r.status === 'scheduled' && r.requestType === 'cleaning' && r.roomTracking
-                            const matchesScheduledFilter = 
-                                data.requestType === 'cleaning' &&
-                                data.roomTracking === true &&
-                                data.status === 'scheduled' &&
-                                !data.finishTime;
-                            
-                            // نستخدم الفلتر الأكثر صرامة (الذي يتحقق من completed) لضمان أن الطلب نشط فعلياً
-                            if (isActuallyActive) {
-                                hasActiveCleaning = true;
-                                console.log('Found active cleaning request (matches script2.js filter):', doc.id, {
-                                    id: doc.id,
-                                    num: data.num,
-                                    status: data.status,
-                                    requestType: data.requestType,
-                                    roomTracking: data.roomTracking,
-                                    finishTime: data.finishTime,
-                                    startTime: data.startTime,
-                                    details: data.details
+                    .then(roomsSnapshot => {
+                        if (!roomsSnapshot.empty) {
+                            // ✅ الغرفة موجودة في rooms - يمكن إرسال طلب تنظيف
+                            // الآن نتحقق من وجود طلبات نظافة نشطة
+                            return db.collection('guestRequests')
+                                .where('num', '==', roomNum)
+                                .where('requestType', '==', 'cleaning')
+                                .get()
+                                .then(snapshot => {
+                                    if (snapshot.empty) {
+                                        // لا توجد طلبات - متابعة الإرسال
+                                        continueSendingRequest();
+                                        return;
+                                    }
+                                    
+                                    // فلترة محلياً بنفس الفلتر المستخدم في script2.js
+                                    let hasActiveCleaning = false;
+                                    let hasScheduledCleaning = false;
+                                    
+                                    snapshot.forEach(doc => {
+                                        const data = doc.data();
+                                        
+                                        // ✅ فحص صارم: الطلب نشط فقط إذا لم يكن مكتملاً
+                                        const isActuallyActive = 
+                                            data.requestType === 'cleaning' &&
+                                            data.roomTracking === true &&
+                                            data.status !== 'scheduled' &&
+                                            data.status !== 'completed' &&
+                                            !data.finishTime;
+                                        
+                                        // ✅ فحص الطلبات المجدولة
+                                        const matchesScheduledFilter = 
+                                            data.requestType === 'cleaning' &&
+                                            data.roomTracking === true &&
+                                            data.status === 'scheduled' &&
+                                            !data.finishTime;
+                                        
+                                        if (isActuallyActive) {
+                                            hasActiveCleaning = true;
+                                            console.log('Found active cleaning request:', doc.id, data);
+                                        } else if (matchesScheduledFilter) {
+                                            hasScheduledCleaning = true;
+                                            console.log('Found scheduled cleaning request:', doc.id, data);
+                                        }
+                                    });
+                                    
+                                    console.log('Cleaning check result:', {
+                                        roomNum: roomNum,
+                                        totalSnapshotSize: snapshot.size,
+                                        hasActive: hasActiveCleaning,
+                                        hasScheduled: hasScheduledCleaning,
+                                        willBlock: hasActiveCleaning || hasScheduledCleaning
+                                    });
+                                    
+                                    // فقط إذا كان هناك طلب نظافة نشط فعلاً، نمنع الإرسال
+                                    if (hasActiveCleaning || hasScheduledCleaning) {
+                                        window.showGuestAlert('يوجد طلب نظافة مفتوح لهذه الغرفة', 'تعرض هذه الصفحة');
+                                        return;
+                                    }
+                                    // متابعة الإرسال
+                                    continueSendingRequest();
+                                })
+                                .catch(error => {
+                                    console.error('Error checking active cleaning requests:', error);
+                                    continueSendingRequest();
                                 });
-                            } else if (matchesScheduledFilter) {
-                                hasScheduledCleaning = true;
-                                console.log('Found scheduled cleaning request (matches script2.js filter):', doc.id, data);
-                            } else {
-                                console.log('Skipped request (does not match script2.js filter):', doc.id, {
-                                    requestType: data.requestType,
-                                    roomTracking: data.roomTracking,
-                                    status: data.status,
-                                    finishTime: data.finishTime,
-                                    matchesActive: matchesActiveFilter,
-                                    matchesScheduled: matchesScheduledFilter
-                                });
-                            }
-                        });
-                        
-                        console.log('Cleaning check result:', {
-                            roomNum: roomNum,
-                            totalSnapshotSize: snapshot.size,
-                            hasActive: hasActiveCleaning,
-                            hasScheduled: hasScheduledCleaning,
-                            willBlock: hasActiveCleaning || hasScheduledCleaning,
-                            note: 'If willBlock is true but you don\'t see requests in Adora UI, check if requests have status="completed" or finishTime in Firebase'
-                        });
-                        
-                        // فقط إذا كان هناك طلب نظافة نشط فعلاً (يطابق الفلتر في script2.js)، نمنع الإرسال
-                        if (hasActiveCleaning || hasScheduledCleaning) {
-                            window.showGuestAlert('يوجد طلب نظافة مفتوح لهذه الغرفة', 'تعرض هذه الصفحة');
-                            return;
+                        } else {
+                            // ✅ الغرفة غير موجودة في rooms - تم إنهاؤها
+                            // التحقق من 12 ساعة تم في sendGuestRequestNow، هنا نتابع الإرسال فقط
+                                            continueSendingRequest();
                         }
-                        // متابعة الإرسال
-                        continueSendingRequest();
-                    })
+                        })
                     .catch((error) => {
                         console.error('Error checking duplicate cleaning requests:', error);
                         // في حالة الخطأ، متابعة الإرسال (لا نمنع المستخدم)
@@ -1625,8 +2290,49 @@
             } else {
                 continueSendingRequest();
             }
+        } else if (category === 'maintenance') {
+            // ✅ التحقق من وجود طلب صيانة نشط للغرفة نفسها
+            if (typeof db !== 'undefined' && db && db.collection) {
+                db.collection('activeMaintenance')
+                    .where('num', '==', roomNum)
+                    .where('status', 'in', ['active', 'acknowledging', 'in-progress'])
+                    .get()
+                    .then(snapshot => {
+                        let hasActiveMaintenance = false;
+                        
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            // التحقق من أن الطلب نشط فعلاً (ليس مكتملاً أو محذوفاً)
+                            if (data.status !== 'completed' && 
+                                data.status !== 'deleted' && 
+                                !data.finishTime &&
+                                // التحقق من أن الطلب حديث (أقل من ساعة)
+                                (Date.now() - (data.startTime || 0)) < 3600000) {
+                                hasActiveMaintenance = true;
+                            }
+                        });
+                        
+                        if (hasActiveMaintenance) {
+                            window.showGuestAlert(
+                                'يوجد طلب صيانة نشط لهذه الغرفة حالياً. سيتم التعامل مع طلبك في أقرب وقت ممكن. نشكرك على صبرك 🙏',
+                                'طلب نشط'
+                            );
+                            return;
+                        }
+                        // متابعة الإرسال
+                        continueSendingRequest();
+                    })
+                    .catch((error) => {
+                        console.error('Error checking duplicate maintenance requests:', error);
+                        // في حالة الخطأ، متابعة الإرسال (لا نمنع المستخدم)
+                        continueSendingRequest();
+                    });
+            } else {
+                // إذا لم يكن Firebase متاحاً، متابعة الإرسال
+                continueSendingRequest();
+            }
         } else {
-            // للطلبات الأخرى (requests, maintenance, etc.) لا نتحقق من التكرار
+            // للطلبات الأخرى (requests, service, fnb) لا نتحقق من التكرار
             continueSendingRequest();
         }
         
@@ -1684,6 +2390,8 @@
         if (mode === 'scheduled' && scheduledTime) {
             payload.schedTimestamp = scheduledTime;
             payload.schedTime = new Date(scheduledTime).toLocaleString('ar-EG');
+            // ✅ التأكد من أن status='scheduled' للطلبات المجدولة
+            payload.status = 'scheduled';
         }
         
         // تحديد Collection حسب النوع
@@ -1726,11 +2434,17 @@
         
         // استخدام النظام الأمني (Geo-Fence + Device Check) مع timeout
         if (typeof window.secureSendHybrid === 'function') {
+            // ✅ متغير لتتبع ما إذا تم إرسال الطلب بالفعل
+            let requestSent = false;
+            
             // timeout للتحقق الأمني (5 ثواني كحد أقصى)
             const securityTimeout = setTimeout(() => {
                 // إذا استغرق التحقق الأمني وقتاً طويلاً، متابعة الإرسال مباشرة
-                console.warn('Security check timeout, proceeding with request');
-                sendRequestToFirebase(collectionName, payload);
+                if (!requestSent) {
+                    console.warn('Security check timeout, proceeding with request');
+                    requestSent = true;
+                    sendRequestToFirebase(collectionName, payload);
+                }
             }, 5000);
             
             window.secureSendHybrid(
@@ -1738,7 +2452,11 @@
                 // onSuccess
                 () => {
                     clearTimeout(securityTimeout);
-                    sendRequestToFirebase(collectionName, payload);
+                    // ✅ التحقق من أن الطلب لم يتم إرساله بالفعل
+                    if (!requestSent) {
+                        requestSent = true;
+                        sendRequestToFirebase(collectionName, payload);
+                    }
                 },
                 // onError
                 (error) => {
@@ -1746,9 +2464,14 @@
                     if (error && error.type === 'DEVICE_LIMIT_EXCEEDED') {
                         hideLoadingBar();
                         window.showGuestAlert(error.message, 'حد الأجهزة');
+                        // ✅ إعادة تعيين حالة الإرسال في حالة الخطأ
+                        isSendingRequest = false;
                     } else {
                         // Fail-open: إرسال الطلب رغم الخطأ
-                        sendRequestToFirebase(collectionName, payload);
+                        if (!requestSent) {
+                            requestSent = true;
+                            sendRequestToFirebase(collectionName, payload);
+                        }
                     }
                 }
             );
@@ -1758,11 +2481,69 @@
         }
     }
     
+    // ✅ متغير لمنع الإرسال المكرر
+    let isSendingRequest = false;
+    
     function sendRequestToFirebase(collectionName, payload) {
-        // إرسال إلى Firebase (فوري بدون انتظار)
-        if (db) {
-            db.collection(collectionName).add(payload)
+        // ✅ منع الإرسال المكرر
+        if (isSendingRequest) {
+            console.warn('Request already being sent, ignoring duplicate');
+            return;
+        }
+        
+        // ✅ تحديد حالة الإرسال
+        isSendingRequest = true;
+        
+        // ✅ فحص تكرار إضافي للصيانة قبل الإرسال
+        if (collectionName === 'activeMaintenance' && db) {
+            db.collection('activeMaintenance')
+                .where('num', '==', payload.num)
+                .where('status', 'in', ['active', 'acknowledging', 'in-progress'])
+                .limit(1)
+                .get()
+                .then(snapshot => {
+                    if (!snapshot.empty) {
+                        // يوجد طلب نشط - التحقق من التفاصيل
+                        let isDuplicate = false;
+                        snapshot.forEach(doc => {
+                            const data = doc.data();
+                            // التحقق من أن الطلب مشابه (نفس الوصف تقريباً ونفس الوقت)
+                            if (data.maintDesc && payload.maintDesc &&
+                                data.maintDesc.trim() === payload.maintDesc.trim() &&
+                                Math.abs((data.startTime || 0) - (payload.startTime || 0)) < 10000) { // 10 ثواني
+                                isDuplicate = true;
+                            }
+                        });
+                        
+                        if (isDuplicate) {
+                            isSendingRequest = false;
+                            hideLoadingBar();
+                            window.showGuestAlert('تم إرسال هذا الطلب مسبقاً', 'طلب مكرر');
+                            return;
+                        }
+                    }
+                    // متابعة الإرسال
+                    proceedWithSending();
+                })
+                .catch((error) => {
+                    console.error('Error checking duplicate before send:', error);
+                    // في حالة الخطأ، متابعة الإرسال
+                    proceedWithSending();
+                });
+        } else {
+            proceedWithSending();
+        }
+        
+        function proceedWithSending() {
+            // إرسال إلى Firebase (فوري بدون انتظار)
+            if (db) {
+                db.collection(collectionName).add(payload)
                 .then(() => {
+                    // ✅ إعادة تعيين حالة الإرسال بعد 2 ثانية
+                    setTimeout(() => {
+                        isSendingRequest = false;
+                    }, 2000);
+                    
                     // تحويل شريط التحميل إلى رسالة نجاح
                     // تحديد رسالة النجاح حسب نوع الطلب
                     const scheduleGroupCheck = document.getElementById('schedule-group');
@@ -1801,6 +2582,8 @@
                     if (imageInput) imageInput.value = '';
                 })
                 .catch(e => {
+                    // ✅ إعادة تعيين حالة الإرسال في حالة الخطأ
+                    isSendingRequest = false;
                     console.error('Error sending request:', e);
                     updateLoadingBarToError('❌ فشل إرسال الطلب');
                 });
@@ -1824,8 +2607,14 @@
                 
                 updateLoadingBarToSuccess(offlineMessage);
             }, 1000);
+            
+            // ✅ إعادة تعيين حالة الإرسال
+            setTimeout(() => {
+                isSendingRequest = false;
+            }, 2000);
         }
-    }
+        } // إغلاق proceedWithSending
+    } // إغلاق sendRequestToFirebase
     } // إغلاق sendGuestRequest
     
     // ============================================
@@ -1880,67 +2669,73 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
-            -webkit-backdrop-filter: blur(4px);
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             z-index: 10001;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
+            padding: 15px;
             animation: fadeIn 0.2s ease;
+            box-sizing: border-box;
         `;
         
         const dialog = document.createElement('div');
+        const isMobile = window.innerWidth <= 768;
         dialog.style.cssText = `
-            background: linear-gradient(135deg, rgba(30, 41, 59, 0.98), rgba(15, 23, 42, 0.98));
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95));
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border-radius: 20px;
-            padding: 24px;
-            max-width: 400px;
+            border-radius: ${isMobile ? '20px' : '24px'};
+            padding: ${isMobile ? '20px' : '28px'};
+            max-width: ${isMobile ? '100%' : '420px'};
             width: 100%;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-height: ${isMobile ? '90vh' : 'auto'};
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 172, 193, 0.3), 0 0 0 1px rgba(0, 172, 193, 0.1);
+            border: 2px solid rgba(0, 172, 193, 0.2);
             animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            box-sizing: border-box;
         `;
         
         dialog.innerHTML = `
-            <div style="display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px;">
+            <div style="display: flex; align-items: flex-start; gap: ${isMobile ? '12px' : '16px'}; margin-bottom: ${isMobile ? '16px' : '20px'};">
                 <div style="
-                    width: 24px;
-                    height: 24px;
-                    background: linear-gradient(135deg, #FBBF24, #F59E0B);
+                    width: ${isMobile ? '40px' : '48px'};
+                    height: ${isMobile ? '40px' : '48px'};
+                    background: linear-gradient(135deg, #00ACC1, #0EA5E9);
                     border-radius: 50%;
                     display: flex;
                     align-items: center;
                     justify-content: center;
                     flex-shrink: 0;
-                    margin-top: 2px;
+                    box-shadow: 0 4px 16px rgba(0, 172, 193, 0.3);
                 ">
-                    <span style="color: #1E293B; font-size: 14px; font-weight: 700;">⚠</span>
+                    <span style="color: white; font-size: ${isMobile ? '20px' : '24px'}; font-weight: 700;">⚠️</span>
                 </div>
-                <div style="flex: 1;">
-                    ${title ? `<div style="color: #F1F5F9; font-size: 1.1rem; font-weight: 700; margin-bottom: 8px;">${title}</div>` : ''}
-                    <div style="color: #E2E8F0; font-size: 0.95rem; line-height: 1.6;">${message}</div>
+                <div style="flex: 1; min-width: 0;">
+                    ${title ? `<div style="color: #1E293B; font-size: ${isMobile ? '1rem' : '1.2rem'}; font-weight: 700; margin-bottom: ${isMobile ? '8px' : '10px'}; font-family: 'Tajawal', sans-serif; word-wrap: break-word;">${title}</div>` : ''}
+                    <div style="color: #475569; font-size: ${isMobile ? '0.9rem' : '1rem'}; line-height: 1.7; font-family: 'Tajawal', sans-serif; word-wrap: break-word; white-space: pre-line;">${message}</div>
                 </div>
             </div>
             <button onclick="this.closest('#guest-alert-modal').remove()" 
                 style="
                     width: 100%;
-                    padding: 12px 24px;
-                    background: linear-gradient(135deg, #8AB4F8, #5B9BD5);
+                    padding: ${isMobile ? '12px 20px' : '14px 28px'};
+                    background: linear-gradient(135deg, #00ACC1, #0EA5E9);
                     color: white;
                     border: none;
-                    border-radius: 12px;
-                    font-size: 1rem;
+                    border-radius: ${isMobile ? '12px' : '14px'};
+                    font-size: ${isMobile ? '0.95rem' : '1.05rem'};
                     font-weight: 700;
                     cursor: pointer;
-                    transition: all 0.2s ease;
-                    box-shadow: 0 4px 12px rgba(138, 180, 248, 0.3);
+                    transition: all 0.3s ease;
+                    box-shadow: 0 4px 16px rgba(0, 172, 193, 0.4);
+                    font-family: 'Tajawal', sans-serif;
                 "
-                onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 6px 16px rgba(138, 180, 248, 0.4)';"
-                onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(138, 180, 248, 0.3)';">
+                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(0, 172, 193, 0.5)';"
+                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 16px rgba(0, 172, 193, 0.4)';">
                 حسناً
             </button>
         `;
@@ -2181,12 +2976,28 @@
     function init() {
         // قراءة رقم الغرفة من URL
         const params = new URLSearchParams(window.location.search);
-        currentRoom = params.get('room') || '--';
+        const roomFromUrl = params.get('room');
+        
+        // ✅ تحديث currentRoom إذا كان موجوداً في URL
+        if (roomFromUrl) {
+            currentRoom = roomFromUrl;
+        } else if (!currentRoom) {
+            currentRoom = '--';
+        }
         
         // عرض رقم الغرفة في صفحة الدخول
         const welcomeRoomInput = document.getElementById('guest-welcome-room');
         if (welcomeRoomInput) {
-            welcomeRoomInput.value = currentRoom !== '--' ? `غرفة ${currentRoom}` : '--';
+            if (currentRoom && currentRoom !== '--') {
+                welcomeRoomInput.value = `غرفة ${currentRoom}`;
+            } else {
+                welcomeRoomInput.value = '--';
+            }
+        }
+        
+        // ✅ التأكد من أن currentRoom صالح قبل المتابعة
+        if (!currentRoom || currentRoom === '--') {
+            console.warn('⚠️ رقم الغرفة غير موجود في URL');
         }
         
         // التحقق من وجود بيانات الدخول المحفوظة لنفس الغرفة
@@ -2206,13 +3017,33 @@
                 // محاولة ملء حقل الإدخال بالبيانات المحفوظة (إن وجدت)
                 const identityInput = document.getElementById('guest-welcome-identity');
                 if (identityInput) {
+                    // ✅ منع إدخال الحروف - السماح فقط بالأرقام (عربي/إنجليزي)
+                    identityInput.addEventListener('input', function(e) {
+                        // إزالة أي حروف والاحتفاظ بالأرقام فقط (عربي ٠-٩ وإنجليزي 0-9)
+                        const value = e.target.value;
+                        const cleaned = value.replace(/[^0-9٠-٩]/g, '');
+                        if (value !== cleaned) {
+                            e.target.value = cleaned;
+                        }
+                    });
+                    
+                    // ✅ منع اللصق للحروف
+                    identityInput.addEventListener('paste', function(e) {
+                        e.preventDefault();
+                        const pasted = (e.clipboardData || window.clipboardData).getData('text');
+                        const cleaned = pasted.replace(/[^0-9٠-٩]/g, '');
+                        e.target.value = cleaned;
+                    });
+                    
                     // محاولة الحصول من مفتاح عام للجهاز
                     try {
                         const deviceData = localStorage.getItem('guest_device_data');
                         if (deviceData) {
                             const parsed = JSON.parse(deviceData);
                             if (parsed && (parsed.identity || parsed.phone)) {
-                                identityInput.value = parsed.identity || parsed.phone || '';
+                                const savedValue = parsed.identity || parsed.phone || '';
+                                // تنظيف القيمة المحفوظة أيضاً
+                                identityInput.value = savedValue.replace(/[^0-9٠-٩]/g, '');
                             }
                         }
                     } catch(e) {
@@ -2277,7 +3108,7 @@
     }
     
     // الانتقال إلى البوابة بعد إدخال البيانات
-    window.proceedToGuestPortal = function() {
+    function proceedToGuestPortal() {
         const identityInput = document.getElementById('guest-welcome-identity');
         if (!identityInput) {
             // إذا لم يكن هناك حقل إدخال (يعني تم استدعاؤها من init)، متابعة مباشرة
@@ -2300,6 +3131,29 @@
             return;
         }
         
+        // ✅ التأكد من وجود رقم الغرفة قبل المتابعة
+        if (!currentRoom || currentRoom === '--') {
+            // محاولة قراءة رقم الغرفة من URL مرة أخرى
+            const params = new URLSearchParams(window.location.search);
+            const roomFromUrl = params.get('room');
+            if (roomFromUrl) {
+                currentRoom = roomFromUrl;
+                // تحديث حقل رقم الغرفة أيضاً
+                const welcomeRoomInput = document.getElementById('guest-welcome-room');
+                if (welcomeRoomInput) {
+                    welcomeRoomInput.value = `غرفة ${currentRoom}`;
+                }
+            } else {
+                // إذا لم يكن موجوداً، عرض رسالة خطأ
+                if (typeof window.showGuestAlert === 'function') {
+                    window.showGuestAlert('⚠️ رقم الغرفة غير معروف. يرجى التأكد من فتح الصفحة من QR Code صحيح.', 'تعرض هذه الصفحة');
+                } else {
+                    alert('⚠️ رقم الغرفة غير معروف. يرجى التأكد من فتح الصفحة من QR Code صحيح.');
+                }
+                return;
+            }
+        }
+        
         // حفظ البيانات مع ربطها برقم الغرفة
         // التحقق من نوع المدخل (هوية أو جوال)
         const isPhone = /^[0-9]{9,10}$/.test(identity.replace(/[^0-9]/g, ''));
@@ -2314,6 +3168,11 @@
         // حفظ البيانات مرتبطة برقم الغرفة
         saveGuestData(currentRoom, guestIdentity, guestPhone);
         
+        // ✅ التحقق من إذن الموقع مرة واحدة فقط في صفحة الدخول
+        if (typeof window.checkGeolocationPermissionOnce === 'function') {
+            window.checkGeolocationPermissionOnce();
+        }
+        
         // إخفاء صفحة الدخول
         const welcomeScreen = document.getElementById('guest-welcome-screen');
         if (welcomeScreen) {
@@ -2325,7 +3184,10 @@
         } else {
             loadGuestPortal();
         }
-    };
+    }
+    
+    // ✅ تصدير الدالة للاستخدام العام
+    window.proceedToGuestPortal = proceedToGuestPortal;
     
     // تحميل البوابة الرئيسية
     function loadGuestPortal() {

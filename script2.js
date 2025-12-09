@@ -886,6 +886,8 @@
             rooms: [], 
             log: [], 
             activeMaintenance: [], 
+            deletedRoomIds: [], // ✅ قائمة مؤقتة للغرف المحذوفة (IDs) لمنع عودتها بعد الريفريش
+            deletedRoomNums: [], // ✅ قائمة مؤقتة للغرف المحذوفة (أرقام) للفحص في guest-engine.js 
             completedMaintenanceLog: [], 
             guestRequests: [], 
             guestRequestsLog: [], 
@@ -1058,6 +1060,13 @@
         // == نظام المشتريات =============================
         // ===============================================
         
+        function closePurchasesModal() {
+            const modal = document.getElementById('purchases-modal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        }
+        
         function showPurchasesModal() {
             const modalHTML = `
             <div class="modal-content" style="max-width:450px; background:linear-gradient(145deg, #ffffff, #f8fafc); border-radius:24px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,0.12); font-family:'Tajawal', sans-serif;">
@@ -1114,7 +1123,7 @@
                     </div>
                 </div>
                 
-                <button onclick="closeModal()" style="width:100%; margin-top:15px; padding:14px; border-radius:12px; border:1px solid rgba(100,116,139,0.2); background:linear-gradient(145deg, rgba(100,116,139,0.08), rgba(148,163,184,0.12)); color:#475569; font-size:0.95rem; font-weight:700; cursor:pointer; transition:all 0.2s; font-family:'Tajawal', sans-serif;">
+                <button onclick="closePurchasesModal()" style="width:100%; margin-top:15px; padding:14px; border-radius:12px; border:1px solid rgba(100,116,139,0.2); background:linear-gradient(145deg, rgba(100,116,139,0.08), rgba(148,163,184,0.12)); color:#475569; font-size:0.95rem; font-weight:700; cursor:pointer; transition:all 0.2s; font-family:'Tajawal', sans-serif;">
                     ← رجوع
                 </button>
             </div>`;
@@ -1551,6 +1560,20 @@
         }
         
         function openFinishModal(id) { 
+            // ✅ إذا كان هناك activeRoomId مختلف، إعادة تفعيل الزر
+            if (activeRoomId && activeRoomId !== id) {
+                const prevConfirmBtn = document.getElementById('btn_confirm_finish');
+                if (prevConfirmBtn) {
+                    prevConfirmBtn.disabled = false;
+                    prevConfirmBtn.style.opacity = '1';
+                    prevConfirmBtn.style.pointerEvents = 'auto';
+                    prevConfirmBtn.classList.remove('btn-loading');
+                    if (prevConfirmBtn.dataset.originalText) {
+                        prevConfirmBtn.innerHTML = prevConfirmBtn.dataset.originalText;
+                    }
+                }
+            }
+            
             activeRoomId = id; 
             const room = appState.rooms.find(r => r.id === id); 
             if (!room) return; 
@@ -1561,6 +1584,12 @@
                 confirmBtn.disabled = false;
                 confirmBtn.style.opacity = '1';
                 confirmBtn.style.pointerEvents = 'auto';
+                confirmBtn.classList.remove('btn-loading');
+                if (confirmBtn.dataset.originalText) {
+                    confirmBtn.innerHTML = confirmBtn.dataset.originalText;
+                } else {
+                    confirmBtn.dataset.originalText = confirmBtn.innerHTML;
+                }
             }
             
             // إعادة تعيين حالة التحميل
@@ -2565,6 +2594,7 @@
         function smartUpdate(forceFullRender = false) { 
             updateTimersDOM(); 
             updateNewStats();
+            renderLogSection(); // ✅ تحديث السجل في كل تحديث
             
             if (forceFullRender) {
                 // إعادة رسم كاملة عند الحاجة
@@ -2797,8 +2827,18 @@
             let scheduledRooms = filterItems(appState.rooms.filter(room => room.status === 'scheduled' && room.type !== 'dnd')); 
             scheduledRooms.sort((a,b) => a.schedTimestamp - b.schedTimestamp);
             
-            document.getElementById('rooms-container').innerHTML = activeRooms.length ? 
-                activeRooms.map(room => createRoomCard(room)).join('') : 
+            // ✅ إزالة التكرار النهائي من activeRooms قبل العرض
+            const finalUniqueRooms = [];
+            const finalSeenIds = new Set();
+            activeRooms.forEach(room => {
+                if (!finalSeenIds.has(room.id)) {
+                    finalSeenIds.add(room.id);
+                    finalUniqueRooms.push(room);
+                }
+            });
+            
+            document.getElementById('rooms-container').innerHTML = finalUniqueRooms.length ? 
+                finalUniqueRooms.map(room => createRoomCard(room)).join('') : 
                 `<p style="text-align:center;color:var(--text-sec); font-size:0.85rem;">${t('noActiveRooms')}</p>`;
             
             // ============ عرض غرف DND في سطر رفيع ============
@@ -2841,12 +2881,14 @@
             const cleaningContainer = document.getElementById('cleaning-requests-container');
             if (!cleaningContainer) return;
             
-            // فلترة طلبات النظافة
+            // ✅ عرض فقط طلبات التنظيف من guestRequests (من QR أو من مصادر أخرى)
+            // الغرف المضافة من زر "+" تظهر في قسم "تتبع الغرف" وليس هنا
             const activeCleaningReqs = appState.guestRequests.filter(r => 
                 r.status !== 'scheduled' && 
                 r.status !== 'completed' && 
                 r.requestType === 'cleaning' && 
                 r.roomTracking === true &&
+                r.fromGuest !== true && // ✅ استبعاد طلبات QR (يتم عرضها كغرف في قسم "تتبع الغرف")
                 String(r.num).includes(appState.searchText)
             );
             
@@ -2854,6 +2896,7 @@
                 r.status === 'scheduled' && 
                 r.requestType === 'cleaning' && 
                 r.roomTracking === true &&
+                r.fromGuest !== true && // ✅ استبعاد طلبات QR المجدولة
                 String(r.num).includes(appState.searchText)
             );
             
@@ -2894,56 +2937,8 @@
                 r.fromGuest === true
             );
             
-            // تحويل كل طلب نظافة من QR إلى غرفة
-            cleaningRequestsFromQR.forEach(req => {
-                // التحقق من عدم وجود غرفة بنفس الرقم والحالة النشطة في activeRooms أولاً
-                const existingInActiveRooms = activeRooms.find(r => r.num == req.num && r.status !== 'scheduled');
-                
-                // التحقق من عدم وجود غرفة بنفس الرقم في appState.rooms
-                const existingRoom = appState.rooms.find(r => r.num == req.num && r.status !== 'scheduled');
-                
-                // إذا كانت موجودة في activeRooms، لا تضيفها مرة أخرى
-                if (existingInActiveRooms) {
-                    return; // تخطي هذا الطلب
-                }
-                
-                if (!existingRoom) {
-                    // إنشاء غرفة من طلب النظافة
-                    const roomFromRequest = {
-                        id: req.id || `req_${req.num}_${req.startTime}`,
-                        num: req.num,
-                        type: 'stay', // افتراضي ساكن
-                        status: 'acknowledging', // تبدأ بحالة "الوصول للغرفة"
-                        startTime: req.startTime || Date.now(),
-                        deadline: (req.startTime || Date.now()) + (HOTEL_CONFIG.times.STAY_NORM || 25 * 60000),
-                        guestStatus: 'in', // افتراضي داخل
-                        isSuperTurbo: false,
-                        fromQR: true, // علامة أن الغرفة جاءت من QR
-                        originalRequestId: req.id, // حفظ ID الطلب الأصلي
-                        historyLogs: [{ 
-                            action: 'طلب نظافة من QR', 
-                            time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) 
-                        }]
-                    };
-                    
-                    // إضافة الغرفة إلى Firebase تلقائياً لتتبع مراحل التنظيف
-                    if (db) {
-                        db.collection('rooms').doc(req.id).set(roomFromRequest, { merge: true })
-                            .catch(err => {
-                                console.error('Error adding QR cleaning room to Firebase:', err);
-                            });
-                    }
-                    
-                    // إضافة إلى appState.rooms محلياً
-                    appState.rooms.push(roomFromRequest);
-                    activeRooms.push(roomFromRequest);
-                } else {
-                    // إذا كانت الغرفة موجودة، أضفها إلى activeRooms إذا لم تكن موجودة
-                    if (!activeRooms.find(r => r.id === existingRoom.id)) {
-                        activeRooms.push(existingRoom);
-                    }
-                }
-            });
+            // ✅ إزالة: لا نضيف غرف من QR هنا - Firebase listener سيتولى ذلك
+            // الغرف من QR يجب أن تأتي فقط من Firebase listener لتجنب التكرار
             
             // ترتيب حسب أول عملية "Arrive at Room" - الغرف التي تم الضغط عليها أولاً تظهر أولاً
             activeRooms.sort((a, b) => { 
@@ -2963,15 +2958,26 @@
             let scheduledRooms = filterItems(appState.rooms.filter(room => room.status === 'scheduled' && room.type !== 'dnd')); 
             
             // إضافة طلبات النظافة المجدولة من QR
-            const scheduledCleaningFromQR = appState.guestRequests.filter(r => 
-                r.requestType === 'cleaning' && 
-                r.roomTracking === true && 
-                r.status === 'scheduled' &&
-                r.fromGuest === true
-            );
+            const scheduledCleaningFromQR = appState.guestRequests.filter(r => {
+                // ✅ فلترة شاملة للطلبات المجدولة
+                const isCleaning = r.requestType === 'cleaning';
+                const hasRoomTracking = r.roomTracking === true;
+                const isScheduled = r.status === 'scheduled';
+                const isFromGuest = r.fromGuest === true;
+                const hasSchedTimestamp = r.schedTimestamp && r.schedTimestamp > 0;
+                
+                return isCleaning && hasRoomTracking && isScheduled && isFromGuest && hasSchedTimestamp;
+            });
             
             scheduledCleaningFromQR.forEach(req => {
-                const existingRoom = appState.rooms.find(r => r.num == req.num && r.status === 'scheduled');
+                // ✅ البحث في scheduledRooms أيضاً (وليس فقط في appState.rooms)
+                const existingRoom = scheduledRooms.find(r => 
+                    r.num == req.num && 
+                    r.status === 'scheduled' && 
+                    r.fromQR === true && 
+                    r.originalRequestId === req.id
+                );
+                
                 if (!existingRoom) {
                     const roomFromRequest = {
                         id: req.id || `req_${req.num}_${req.schedTimestamp}`,
@@ -3089,7 +3095,17 @@
                 </div>
 
                 <div class="room-details">
-                    <div class="room-title">${badgeText}${room.isSuperTurbo ? ' 🚀' : ''}</div>
+                    <div class="room-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span>${badgeText}${room.isSuperTurbo ? ' 🚀' : ''}</span>
+                        ${room.fromQR ? (() => {
+                            // ✅ إضافة الهوية/الجوال للغرف من QR
+                            const qrRequest = appState.guestRequests.find(r => r.id === room.originalRequestId || (r.num == room.num && r.fromGuest && r.requestType === 'cleaning'));
+                            if (qrRequest && (qrRequest.guestIdentity || qrRequest.guestPhone)) {
+                                return `<span style="font-size: 0.7rem; color: var(--text-sec); background: rgba(16, 185, 129, 0.1); padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 500; white-space: nowrap;" title="رقم الجوال أو الهوية">📱 ${qrRequest.guestPhone || qrRequest.guestIdentity || ''}</span>`;
+                            }
+                            return '';
+                        })() : ''}
+                    </div>
                     <div class="room-timer" id="timer-${room.id}">--</div>
                     ${alertsHtml ? `<div class="room-alerts">${alertsHtml}</div>` : ''}
                 </div>
@@ -3304,36 +3320,66 @@ async function showRoomQuickInfo(id) {
             const details = req.details || 'طلب';
             const shortDetails = details.length > 25 ? details.substring(0, 25) + '...' : details;
             
-            // التحقق من وجود num صالح (لإصلاح مشكلة undefined)
-            const roomNum = (req.num !== undefined && req.num !== null && !isNaN(req.num)) 
-                ? parseInt(req.num, 10) 
-                : (req.room !== undefined && req.room !== null && !isNaN(req.room))
-                    ? parseInt(req.room, 10)
-                    : '--';
+            // ✅ التحقق من وجود num صالح (لإصلاح مشكلة undefined) - تحسين
+            let roomNum = '--';
+            if (req.num !== undefined && req.num !== null && req.num !== '') {
+                const parsed = parseInt(req.num, 10);
+                if (!isNaN(parsed) && parsed > 0) {
+                    roomNum = parsed;
+                }
+            } else if (req.room !== undefined && req.room !== null && req.room !== '') {
+                const parsed = parseInt(req.room, 10);
+                if (!isNaN(parsed) && parsed > 0) {
+                    roomNum = parsed;
+                }
+            }
 
+            // ✅ زر "تلبية طلب طارئ" و "جدوله" للطلبات الطارئة
+            let emergencyButtons = '';
+            if (req.isEmergency && !isScheduled && req.status !== 'completed') {
+                emergencyButtons = `
+                    <button class="glass-btn" style="background: linear-gradient(135deg, #EF4444, #DC2626); color: white; font-weight: 700; margin-left: 5px;" 
+                            onclick="event.stopPropagation(); handleEmergencyRequest('${req.id}')" 
+                            title="تلبية طلب طارئ">
+                        🚨 تلبية طلب طارئ
+                    </button>
+                    <button class="glass-btn" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white; font-weight: 700; margin-left: 5px;" 
+                            onclick="event.stopPropagation(); scheduleEmergencyRequest('${req.id}')" 
+                            title="جدولة الطلب الطارئ">
+                        📅 جدوله
+                    </button>
+                `;
+            }
+            
             let actionBtn = !isScheduled ? 
                 `<button class="glass-btn finish" onclick="completeRequest('${req.id}')">${t('finish')}</button>` : 
                 `<button class="glass-btn start" onclick="forceStartScheduled('${req.id}', 'req')">${t('start')}</button>`;
 
             // RTL: يمين → يسار
             return `
-            <div class="room-row status-request ${isScheduled ? 'status-scheduled' : ''}" onclick="showRequestDetails('${req.id}')" style="cursor: pointer;">
+            <div class="room-row status-request ${isScheduled ? 'status-scheduled' : ''} ${req.isEmergency ? 'status-emergency' : ''}" onclick="showRequestDetails('${req.id}')" style="cursor: pointer; ${req.isEmergency ? 'border: 2px solid #EF4444; background: linear-gradient(135deg, rgba(239,68,68,0.1), rgba(220,38,38,0.05));' : ''}">
                 
                 <div class="room-num-circle" style="position: relative;">
                     ${roomNum}
+                    ${req.isEmergency ? '<span style="position: absolute; top: -5px; right: -5px; background: linear-gradient(135deg, #EF4444, #DC2626); color: white; font-size: 0.6rem; font-weight: 700; padding: 2px 6px; border-radius: 8px; box-shadow: 0 2px 8px rgba(239,68,68,0.5); z-index: 10; animation: pulse-red 2s infinite;">🚨 طارئ</span>' : ''}
                     ${req.fromGuest ? `<span style="position: absolute; top: -3px; left: -3px; width: 16px; height: 16px; background: linear-gradient(135deg, #10B981, #059669); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4), inset 0 1px 0 rgba(255,255,255,0.3); border: 1.5px solid rgba(255,255,255,0.9); z-index: 10;" title="طلب من QR"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17 2H7C5.9 2 5 2.9 5 4V20C5 21.1 5.9 22 7 22H17C18.1 22 19 21.1 19 20V4C19 2.9 18.1 2 17 2ZM17 18H7V6H17V18Z" fill="white"/></svg></span>` : ''}
                 </div>
 
                 <div class="room-details">
                     <div class="room-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                        <span>${req.requestType === 'checkout' ? '🚪 طلب تسجيل خروج' : req.requestType === 'cleaning' ? '🧹 طلب نظافة' : (req.isUrgent ? `🚨 ${t('urgentRequest')}` : `🛎️ طلب`)}</span>
+                        <span>${req.requestType === 'checkout' ? '🚪 طلب تسجيل خروج' : req.requestType === 'cleaning' ? '🧹 طلب نظافة' : req.requestType === 'inspection' ? (req.inspectionData && req.inspectionData.type === 'supervisor' && req.inspectionData.fromReception ? '📋 طلب فحص' : '📋 تقرير فحص') : (req.isUrgent || req.isEmergency ? `🚨 ${t('urgentRequest')}` : `🛎️ طلب`)}</span>
+                        ${req.isEmergency ? '<span style="font-size: 0.7rem; color: white; background: linear-gradient(135deg, #EF4444, #DC2626); padding: 2px 8px; border-radius: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 6px rgba(239,68,68,0.4);">🚨 طارئ</span>' : ''}
                         ${req.fromGuest && (req.guestIdentity || req.guestPhone) ? `<span style="font-size: 0.7rem; color: var(--text-sec); background: rgba(16, 185, 129, 0.1); padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 500; white-space: nowrap;" title="رقم الجوال أو الهوية">${req.guestPhone || req.guestIdentity || ''}</span>` : ''}
                     </div>
                     <div class="room-timer ${isScheduled ? 'timer-sched' : 'timer-req'}" id="req-timer-${req.id}">0:00</div>
-                    <div class="room-desc">${req.requestType === 'checkout' ? (req.details && req.details.includes('عربة') ? 'يحتاج عربة' : 'طلب تسجيل خروج - بدون عربة') : shortDetails}</div>
+                    ${isScheduled && req.fromGuest ? `<div id="req-scheduled-info-${req.id}" style="font-size: 0.75rem; color: var(--text-sec); margin-top: 4px; font-weight: 500;"></div>` : ''}
+                    <div class="room-desc">${req.requestType === 'checkout' ? (req.details && req.details.includes('عربة') ? 'يحتاج عربة' : 'طلب تسجيل خروج - بدون عربة') : req.requestType === 'inspection' ? (req.inspectionData && req.inspectionData.type === 'supervisor' ? (req.inspectionData.fromReception ? `طلب فحص غرفة ${req.num}` : 'تقرير فحص للمشرف') : req.inspectionData && req.inspectionData.type === 'minibar' ? `تقرير فحص الميني بار - غرفة ${req.num}` : req.inspectionData && req.inspectionData.type === 'damages' ? `تقرير فحص تلفيات - غرفة ${req.num}` : req.inspectionData && req.inspectionData.type === 'lostfound' ? `تقرير فحص مفقودات - غرفة ${req.num}` : req.inspectionData && req.inspectionData.type === 'excellent' ? `تقرير فحص - حالة ممتازة - غرفة ${req.num}` : `تقرير فحص - غرفة ${req.num}`) : shortDetails}</div>
                 </div>
 
-                <div onclick="event.stopPropagation();">${actionBtn}</div>
+                <div onclick="event.stopPropagation();" style="display: flex; gap: 5px; align-items: center;">
+                    ${emergencyButtons}
+                    ${actionBtn}
+                </div>
             </div>`;
         }
         
@@ -3344,7 +3390,138 @@ async function showRoomQuickInfo(id) {
             
             const roomNum = req.num || req.room || '--';
             
-            // جلب آخر 3 طلبات للغرفة نفسها
+            // ✅ إذا كان طلب فحص، عرض تفاصيل الفحص الكاملة
+            if (req.isInspection && req.inspectionData) {
+                const inspectionData = req.inspectionData;
+                const startDate = req.startTime ? new Date(req.startTime) : new Date(Date.now());
+                const startDateStr = startDate.toLocaleDateString('ar-EG', { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+                const startTimeStr = startDate.toLocaleTimeString('ar-EG', { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                });
+                
+                let inspectionDetailsHTML = '';
+                
+                // تفاصيل حسب نوع الفحص
+                if (inspectionData.type === 'supervisor') {
+                    inspectionDetailsHTML = `
+                        <div style="background: linear-gradient(135deg, rgba(239,68,68,0.1), rgba(220,38,38,0.1)); padding: 15px; border-radius: 12px; border: 2px solid rgba(239,68,68,0.3); margin-bottom: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: #EF4444; font-size: 1rem; font-weight: 700;">👔 تقرير فحص للمشرف</h5>
+                            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 0.95rem; color: var(--text-main);">
+                                <div><strong>🔴 الأولوية:</strong> ${inspectionData.urgencyText || 'غير محدد'}</div>
+                                <div><strong>👤 حالة النزيل:</strong> ${inspectionData.guestStatusText || 'غير محدد'}</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (inspectionData.type === 'minibar') {
+                    const items = inspectionData.items || [];
+                    inspectionDetailsHTML = `
+                        <div style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.1)); padding: 15px; border-radius: 12px; border: 2px solid rgba(245,158,11,0.3); margin-bottom: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: #F59E0B; font-size: 1rem; font-weight: 700;">🍫 الميني بار</h5>
+                            ${items.length > 0 ? `
+                                <div style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 10px;">
+                                    <strong>العناصر المستهلكة:</strong>
+                                </div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    ${items.map(item => `
+                                        <span style="background: rgba(245,158,11,0.2); padding: 6px 12px; border-radius: 8px; font-size: 0.9rem; color: var(--text-main); border: 1px solid rgba(245,158,11,0.4);">
+                                            ${item}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            ` : '<div style="color: var(--text-sec); font-size: 0.9rem;">لا توجد عناصر مستهلكة</div>'}
+                        </div>
+                    `;
+                } else if (inspectionData.type === 'damages') {
+                    inspectionDetailsHTML = `
+                        <div style="background: linear-gradient(135deg, rgba(239,68,68,0.1), rgba(220,38,38,0.1)); padding: 15px; border-radius: 12px; border: 2px solid rgba(239,68,68,0.3); margin-bottom: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: #EF4444; font-size: 1rem; font-weight: 700;">🔨 الأضرار</h5>
+                            ${inspectionData.imageUrl ? `
+                                <div style="margin-top: 10px;">
+                                    <img src="${inspectionData.imageUrl}" alt="صورة الأضرار" 
+                                         style="width: 100%; max-width: 400px; border-radius: 8px; border: 2px solid rgba(239,68,68,0.3); cursor: pointer;"
+                                         onclick="window.open('${inspectionData.imageUrl}', '_blank')">
+                                </div>
+                            ` : '<div style="color: var(--text-sec); font-size: 0.9rem;">لا توجد صورة للأضرار</div>'}
+                        </div>
+                    `;
+                } else if (inspectionData.type === 'lostfound') {
+                    inspectionDetailsHTML = `
+                        <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(37,99,235,0.1)); padding: 15px; border-radius: 12px; border: 2px solid rgba(59,130,246,0.3); margin-bottom: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: #3B82F6; font-size: 1rem; font-weight: 700;">☂️ مفقودات</h5>
+                            ${inspectionData.imageUrl ? `
+                                <div style="margin-top: 10px;">
+                                    <img src="${inspectionData.imageUrl}" alt="صورة المفقودات" 
+                                         style="width: 100%; max-width: 400px; border-radius: 8px; border: 2px solid rgba(59,130,246,0.3); cursor: pointer;"
+                                         onclick="window.open('${inspectionData.imageUrl}', '_blank')">
+                                </div>
+                            ` : '<div style="color: var(--text-sec); font-size: 0.9rem;">لا توجد صورة للمفقودات</div>'}
+                        </div>
+                    `;
+                } else if (inspectionData.type === 'excellent') {
+                    inspectionDetailsHTML = `
+                        <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(5,150,105,0.1)); padding: 15px; border-radius: 12px; border: 2px solid rgba(16,185,129,0.3); margin-bottom: 15px;">
+                            <h5 style="margin: 0 0 10px 0; color: #10B981; font-size: 1rem; font-weight: 700;">✅ حالة ممتازة</h5>
+                            <div style="color: var(--text-main); font-size: 0.95rem;">
+                                الغرفة في حالة ممتازة - لا توجد ملاحظات
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                // إنشاء نافذة تفاصيل الفحص
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed; inset: 0; background: rgba(0,0,0,0.7); 
+                    display: flex; align-items: center; justify-content: center; 
+                    z-index: 9999; padding: 20px;
+                `;
+                
+                modal.innerHTML = `
+                    <div style="background: var(--bg-body); border-radius: 16px; max-width: 600px; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.3);">
+                        <div style="padding: 20px; border-bottom: 2px solid var(--border-color);">
+                            <h3 style="margin: 0; color: var(--primary); font-size: 1.3rem;">📋 تقرير فحص - غرفة ${roomNum}</h3>
+                        </div>
+                        <div style="padding: 20px;">
+                            ${inspectionDetailsHTML}
+                            
+                            <div style="background: linear-gradient(135deg, rgba(168,85,247,0.1), rgba(236,72,153,0.1)); padding: 15px; border-radius: 12px; border: 2px solid rgba(168,85,247,0.3); margin-top: 20px;">
+                                <h4 style="margin: 0 0 10px 0; color: var(--text-main); font-size: 1rem; font-weight: 700;">📅 معلومات التقرير</h4>
+                                <div style="display: flex; flex-direction: column; gap: 6px; font-size: 0.9rem; color: var(--text-sec);">
+                                    <div>📅 <strong>التاريخ:</strong> ${startDateStr}</div>
+                                    <div>⏰ <strong>الوقت:</strong> ${startTimeStr}</div>
+                                    <div>🔄 <strong>الحالة:</strong> ${req.status === 'completed' ? '✅ مكتمل' : '🔄 نشط'}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="padding: 15px; border-top: 2px solid var(--border-color);">
+                            <button onclick="this.parentElement.parentElement.parentElement.remove()" style="
+                                width: 100%; padding: 12px; background: linear-gradient(135deg, var(--request-color), #0EA5E9);
+                                color: white; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700;
+                                cursor: pointer; box-shadow: 0 4px 12px rgba(14,165,233,0.3);
+                            ">إغلاق</button>
+                        </div>
+                    </div>
+                `;
+                
+                document.body.appendChild(modal);
+                
+                // إغلاق عند الضغط خارج النافذة
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        modal.remove();
+                    }
+                });
+                
+                return; // إنهاء الدالة هنا للطلبات الفحص
+            }
+            
+            // جلب آخر 3 طلبات للغرفة نفسها (للطلبات العادية)
             let recentRequests = [];
             if (db) {
                 try {
@@ -3487,22 +3664,40 @@ async function showRoomQuickInfo(id) {
         window.showRequestDetails = showRequestDetails;
 
 function renderGuestRequests() {
+    // ✅ عرض الأخبار أولاً
+    renderNewsTicker();
+    
     // فصل طلبات النظافة (roomTracking = true) عن باقي الطلبات
-    const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && (!r.roomTracking || r.requestType !== 'cleaning'));
-    const scheduledReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && (!r.roomTracking || r.requestType !== 'cleaning'));
+    // ✅ إزالة طلبات النظافة تماماً من قسم الطلبات (لأنها تظهر في قسم التنظيف فقط)
+    const activeReqs = appState.guestRequests.filter(r => 
+        r.status !== 'scheduled' && 
+        r.status !== 'completed' && 
+        !(r.requestType === 'cleaning' && r.roomTracking === true) // استبعاد طلبات النظافة تماماً
+    );
+    const scheduledReqs = appState.guestRequests.filter(r => 
+        r.status === 'scheduled' && 
+        !(r.requestType === 'cleaning' && r.roomTracking === true) // استبعاد طلبات النظافة المجدولة
+    );
     const archiveReqs = appState.guestRequestsLog || [];
     
-    // طلبات النظافة (cleaning) - سيتم عرضها في قسم تتبع الغرف
-    const activeCleaningReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType === 'cleaning' && r.roomTracking);
-    const scheduledCleaningReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType === 'cleaning' && r.roomTracking);
+    // طلبات النظافة (cleaning) - سيتم عرضها في قسم تتبع الغرف فقط (لا تظهر هنا)
 
     const requestSection = document.getElementById('guest-requests-section');
     const archiveContainer = document.getElementById('req-archive-container');
 
     const isArchiveOpen = (appState.isArchiveView && appState.isArchiveView.req) === true;
 
-            // إظهار القسم دائماً
-        if (requestSection) requestSection.style.display = 'block';
+            // ✅ إخفاء القسم إذا كان فارغاً (لكن نعرضه إذا كانت هناك أخبار)
+        if (requestSection) {
+            const newsContainer = document.getElementById('news-ticker-container');
+            const hasNews = newsContainer && newsContainer.style.display !== 'none' && newsContainer.innerHTML.trim() !== '';
+            
+            if (activeReqs.length === 0 && scheduledReqs.length === 0 && !hasNews) {
+                requestSection.style.display = 'none';
+            } else {
+                requestSection.style.display = 'block';
+            }
+        }
 
     // عرض الطلبات النشطة
     const activeList = document.getElementById('guest-requests-active-list');
@@ -3511,8 +3706,18 @@ function renderGuestRequests() {
                     // لا توجد عمليات نشطة
                     activeList.innerHTML = `<div style="text-align:center; padding:8px; color:var(--text-sec); font-size:0.85rem;"><span>${t('noActiveRequests')}</span></div>`;
                 } else {
-        activeList.innerHTML = activeReqs.length ?
-            activeReqs.map(req => createRequestCard(req)).join('') :
+                    // ✅ إزالة التكرار النهائي من الطلبات قبل العرض
+                    const uniqueActiveReqs = [];
+                    const seenReqIds = new Set();
+                    activeReqs.forEach(req => {
+                        if (!seenReqIds.has(req.id)) {
+                            seenReqIds.add(req.id);
+                            uniqueActiveReqs.push(req);
+                        }
+                    });
+                    
+                    activeList.innerHTML = uniqueActiveReqs.length ?
+                        uniqueActiveReqs.map(req => createRequestCard(req)).join('') :
                         `<p class="no-data">${t('noActiveRequests')}</p>`;
                 }
     }
@@ -3601,6 +3806,23 @@ function renderMaintenanceCards() {
                     ? parseInt(maint.room, 10)
                     : '--';
             
+            // ✅ زر "تلبية طلب طارئ" و "جدوله" للصيانة الطارئة
+            let emergencyButtons = '';
+            if (maint.isEmergency && !isScheduled && maint.status !== 'completed') {
+                emergencyButtons = `
+                    <button class="glass-btn" style="background: linear-gradient(135deg, #EF4444, #DC2626); color: white; font-weight: 700; margin-left: 5px;" 
+                            onclick="handleEmergencyRequest('${maint.id}', 'maintenance')" 
+                            title="تلبية طلب طارئ">
+                        🚨 تلبية طلب طارئ
+                    </button>
+                    <button class="glass-btn" style="background: linear-gradient(135deg, #F59E0B, #D97706); color: white; font-weight: 700; margin-left: 5px;" 
+                            onclick="scheduleEmergencyRequest('${maint.id}', 'maintenance')" 
+                            title="جدولة الطلب الطارئ">
+                        📅 جدوله
+                    </button>
+                `;
+            }
+            
             let actionBtn = !isScheduled ? 
                 `<button class="glass-btn finish" onclick="openCompleteMaintenanceModal('${maint.id}')">${t('finish')}</button>` : 
                 `<button class="glass-btn start" onclick="forceStartScheduled('${maint.id}', 'maint')">${t('start')}</button>`;
@@ -3610,20 +3832,30 @@ function renderMaintenanceCards() {
 
             // RTL: يمين → يسار
             return `
-            <div class="room-row status-maintenance ${isScheduled ? 'status-scheduled' : ''}">
+            <div class="room-row status-maintenance ${isScheduled ? 'status-scheduled' : ''} ${maint.isEmergency ? 'status-emergency' : ''}" style="${maint.isEmergency ? 'border: 2px solid #EF4444; background: linear-gradient(135deg, rgba(239,68,68,0.1), rgba(220,38,38,0.05));' : ''}">
                 
                 <div class="room-num-circle" style="position: relative;">
                     ${roomNum}
+                    ${maint.isEmergency ? '<span style="position: absolute; top: -5px; right: -5px; background: linear-gradient(135deg, #EF4444, #DC2626); color: white; font-size: 0.6rem; font-weight: 700; padding: 2px 6px; border-radius: 8px; box-shadow: 0 2px 8px rgba(239,68,68,0.5); z-index: 10; animation: pulse-red 2s infinite;">🚨 طارئ</span>' : ''}
                     ${maint.fromGuest ? '<span style="position: absolute; top: -3px; left: -3px; width: 16px; height: 16px; background: linear-gradient(135deg, #10B981, #059669); border-radius: 50%; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4), inset 0 1px 0 rgba(255,255,255,0.3); border: 1.5px solid rgba(255,255,255,0.9); z-index: 10;" title="صيانة من QR"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17 2H7C5.9 2 5 2.9 5 4V20C5 21.1 5.9 22 7 22H17C18.1 22 19 21.1 19 20V4C19 2.9 18.1 2 17 2ZM17 18H7V6H17V18Z" fill="white"/></svg></span>' : ''}
                 </div>
 
                 <div class="room-details">
-                    <div class="room-title">🛠️ صيانة</div>
+                    <div class="room-title" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                        <span>🛠️ صيانة</span>
+                        ${maint.isEmergency ? '<span style="font-size: 0.7rem; color: white; background: linear-gradient(135deg, #EF4444, #DC2626); padding: 2px 8px; border-radius: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 6px rgba(239,68,68,0.4);">🚨 طارئ</span>' : ''}
+                        ${maint.fromGuest && (maint.guestIdentity || maint.guestPhone) ? `<span style="font-size: 0.7rem; color: var(--text-sec); background: rgba(16, 185, 129, 0.1); padding: 2px 8px; border-radius: 12px; border: 1px solid rgba(16, 185, 129, 0.3); font-weight: 500; white-space: nowrap;" title="رقم الجوال أو الهوية">📱 ${maint.guestPhone || maint.guestIdentity || ''}</span>` : ''}
+                    </div>
                     <div class="room-timer ${isScheduled ? 'timer-sched' : 'timer-maint'}" id="maint-timer-${maint.id}">0:00</div>
+                    ${isScheduled && maint.fromGuest ? `<div id="maint-scheduled-info-${maint.id}" style="font-size: 0.75rem; color: var(--text-sec); margin-top: 4px; font-weight: 500;"></div>` : ''}
                     <div class="room-desc">${shortDesc}</div>
                 </div>
 
-                <div style="display:flex; align-items:center;">${actionBtn}${imgBtn}</div>
+                <div style="display:flex; align-items:center; gap: 5px;">
+                    ${emergencyButtons}
+                    ${actionBtn}
+                    ${imgBtn}
+                </div>
             </div>`;
         }
         
@@ -3631,13 +3863,39 @@ function renderMaintenanceCards() {
             const listEl = document.getElementById('cleaning-log-list'); 
             const btnMore = document.getElementById('btn-more-log');
             
-            if (!appState.log || appState.log.length === 0) { 
+            // ✅ جمع كل العمليات المكتملة (غرف + طلبات + صيانة)
+            const allCompletedOperations = [
+                ...(appState.log || []).map(item => ({ ...item, logType: 'cleaning' })),
+                ...(appState.guestRequestsLog || []).map(item => ({ 
+                    ...item, 
+                    logType: 'request',
+                    num: item.num || '--',
+                    finishTime: item.finishTime || item.id,
+                    startTime: item.startTime || item.id
+                })),
+                ...(appState.completedMaintenanceLog || []).map(item => ({ 
+                    ...item, 
+                    logType: 'maintenance',
+                    num: item.num || '--',
+                    finishTime: item.finishTime || item.id,
+                    startTime: item.startTime || item.id,
+                    maintDesc: item.maintDesc || ''
+                }))
+            ];
+            
+            if (allCompletedOperations.length === 0) { 
                 listEl.innerHTML = `<p style="text-align:center;color:var(--text-sec); font-size:0.85rem;">${t('noCompletedOperations')}</p>`; 
                 if (btnMore) btnMore.style.display = 'none';
                 return; 
             } 
             
-            const sortedLog = [...appState.log].sort((a, b) => b.id - a.id);
+            // ✅ ترتيب حسب وقت الانتهاء (الأحدث أولاً)
+            const sortedLog = allCompletedOperations.sort((a, b) => {
+                const aTime = a.finishTime || a.id || 0;
+                const bTime = b.finishTime || b.id || 0;
+                return bTime - aTime;
+            });
+            
             // عرض آخر 3 سجلات فقط افتراضياً
             const defaultLimit = 3;
             const limit = appState.logViewLimit || defaultLimit;
@@ -3652,29 +3910,35 @@ function renderMaintenanceCards() {
         }
         
         function createLogRow(item, isArchive) {
-            // تحديد نوع العملية والألوان
+            // ✅ تحديد نوع العملية من logType أولاً، ثم من الحقول الأخرى
             let borderColor = 'var(--success)';
             let bgColor = 'rgba(34, 197, 94, 0.05)';
             let typeIcon = '🧹';
             let typeText = t('cleaning');
             let statusBadge = `${t('completed')} ✅`;
             
-            if (item.type === 'request' || item.details) {
+            // ✅ استخدام logType أولاً لتحديد نوع العملية
+            if (item.logType === 'request' || (item.type === 'request' || item.details)) {
                 borderColor = 'var(--request-color)';
                 bgColor = 'rgba(59, 130, 246, 0.05)';
                 typeIcon = '🛎️';
                 typeText = t('request');
                 statusBadge = `${t('executed')} ✅`;
-            } else if (item.type === 'maint' || item.maintDesc) {
+            } else if (item.logType === 'maintenance' || (item.type === 'maint' || item.maintDesc)) {
                 borderColor = 'var(--maint-color)';
                 bgColor = 'rgba(6, 182, 212, 0.05)';
                 typeIcon = '🛠️';
                 typeText = t('maintenance');
-                statusBadge = item.finishImg ? `${t('maintenanceDone')} ✅` : `${t('maintenanceInProgress')} 🔧`;
-            } else if (item.type === 'out') {
+                statusBadge = item.finishImg || item.maintImg ? `${t('maintenanceDone')} ✅` : `${t('maintenanceInProgress')} 🔧`;
+            } else if (item.logType === 'cleaning' || item.type) {
+                // تنظيف - تحديد نوع التنظيف
+                if (item.type === 'out') {
                 typeText = t('checkout');
             } else if (item.type === 'stay') {
                 typeText = t('stayover');
+                } else {
+                    typeText = t('cleaning');
+                }
             }
             
             if (item.isLate) {
@@ -3684,21 +3948,23 @@ function renderMaintenanceCards() {
             // الأوقات - استخدام اللغة الحالية
             const locale = appState.language === 'ar' ? 'ar-EG' : appState.language === 'en' ? 'en-US' : appState.language === 'hi' ? 'hi-IN' : appState.language === 'ur' ? 'ur-PK' : 'bn-BD';
             const startTime = item.startTime ? new Date(item.startTime).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: true }) : '--';
-            const finishTime = item.finishTime ? new Date(item.finishTime).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: true }) : new Date(item.id).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: true });
+            const finishTime = item.finishTime ? new Date(item.finishTime).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: true }) : (item.id ? new Date(item.id).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: true }) : '--');
             const duration = item.duration || '--';
             
-            // التفاصيل المختصرة
+            // ✅ التفاصيل المختصرة - دعم جميع الأنواع
             let shortDetails = '';
             if (item.details) {
-                shortDetails = item.details.split(' ')[0] || '';
+                // للطلبات - عرض أول كلمة أو جزء من التفاصيل
+                shortDetails = item.details.length > 20 ? item.details.substring(0, 20) + '...' : item.details;
             } else if (item.maintDesc) {
-                shortDetails = item.maintDesc.split(' ')[0] || '';
+                // للصيانة
+                shortDetails = item.maintDesc.length > 20 ? item.maintDesc.substring(0, 20) + '...' : item.maintDesc;
             }
             
-            // أيقونة الصورة
+            // ✅ أيقونة الصورة - دعم جميع أنواع الصور
             let imgIcon = '';
-            if (item.finishImg || item.maintImg) {
-                const imgUrl = item.finishImg || item.maintImg;
+            if (item.finishImg || item.maintImg || item.imageUrl) {
+                const imgUrl = item.finishImg || item.maintImg || item.imageUrl;
                 imgIcon = `<span onclick="window.open('${imgUrl}', '_blank')" style="cursor:pointer; font-size:1.1rem; margin-right:8px;" title="عرض الصورة">📷</span>`;
             }
             
@@ -3851,8 +4117,24 @@ function renderMaintenanceCards() {
                                 el.className = 'room-timer timer-active';
                             }
                         } else {
+                            // ✅ إصلاح: التحقق من وجود startTime قبل عرض --
+                            if (room.startTime && typeof room.startTime === 'number' && isFinite(room.startTime)) {
+                                const elapsedMs = now - room.startTime;
+                                const totalSeconds = Math.floor(elapsedMs / 1000);
+                                const hours = Math.floor(totalSeconds / 3600);
+                                const minutes = Math.floor((totalSeconds % 3600) / 60);
+                                const seconds = totalSeconds % 60;
+                                
+                                if (hours > 0) {
+                                    el.innerHTML = `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+                                } else {
+                                    el.innerHTML = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                                }
+                                el.className = 'room-timer timer-active';
+                        } else {
                             el.innerHTML = '--';
                             el.className = 'room-timer';
+                            }
                         }
                     } else {
                         // fallback إلى startTime (عرض الوقت المنقضي منذ البدء بصيغة h:mm:ss أو m:ss)
@@ -3908,8 +4190,35 @@ function renderMaintenanceCards() {
                         el.innerHTML = `<div style="font-size:0.9rem; font-weight:bold;">${timeDisplay}</div>
                                        <div style="font-size:0.6rem; color:var(--text-sec);">⏰ ${timeStr}</div>`;
                         el.className = 'room-timer timer-sched';
+                        
+                        // ✅ إضافة نص للصيانة المجدولة من QR
+                        if (maint.fromGuest) {
+                            const infoEl = document.getElementById(`maint-scheduled-info-${maint.id}`);
+                            if (infoEl) {
+                                // الحصول على أوقات العمل من localStorage
+                                const saved = localStorage.getItem('HOTEL_GUEST_CONFIG');
+                                let workingTimeText = '';
+                                if (saved) {
+                                    try {
+                                        const config = JSON.parse(saved);
+                                        const cooldowns = config.requestCooldowns || {};
+                                        const fromTime = cooldowns.maintenanceFrom || '08:00';
+                                        workingTimeText = `تم الجدولة لأول دوام العمال الساعة ${fromTime}`;
+                                        infoEl.innerHTML = `${workingTimeText} - متبقي لبدء تنشيط الطلب: ${timeDisplay}`;
+                                    } catch (e) {
+                                        infoEl.innerHTML = `تم الجدولة لأول دوام العمال - متبقي: ${timeDisplay}`;
+                                    }
+                                } else {
+                                    infoEl.innerHTML = `تم الجدولة لأول دوام العمال - متبقي: ${timeDisplay}`;
+                                }
+                            }
+                        }
                     } else {
                         el.innerHTML = '<div style="color:var(--success); font-weight:bold;">بدء الآن</div>';
+                        const infoEl = document.getElementById(`maint-scheduled-info-${maint.id}`);
+                        if (infoEl) {
+                            infoEl.innerHTML = '';
+                        }
                     }
                 } else { 
                     // صيانة نشطة - عرض الوقت المنقضي منذ البدء بصيغة h:mm:ss أو m:ss
@@ -3962,8 +4271,48 @@ function renderMaintenanceCards() {
                         el.innerHTML = `<div style="font-size:0.9rem; font-weight:bold;">${timeDisplay}</div>
                                        <div style="font-size:0.6rem; color:var(--text-sec);">⏰ ${timeStr}</div>`;
                         el.className = 'room-timer timer-sched';
+                        
+                        // ✅ إضافة نص للطلبات المجدولة من QR
+                        if (req.fromGuest) {
+                            const infoEl = document.getElementById(`req-scheduled-info-${req.id}`);
+                            if (infoEl) {
+                                // الحصول على أوقات العمل من localStorage
+                                const saved = localStorage.getItem('HOTEL_GUEST_CONFIG');
+                                let workingTimeText = '';
+                                if (saved) {
+                                    try {
+                                        const config = JSON.parse(saved);
+                                        const cooldowns = config.requestCooldowns || {};
+                                        
+                                        if (req.requestType === 'cleaning') {
+                                            const fromTime = cooldowns.cleaningFrom || '08:00';
+                                            workingTimeText = `تم الجدولة لأول دوام العمال الساعة ${fromTime}`;
+                                        } else if (req.requestType === 'maintenance') {
+                                            const fromTime = cooldowns.maintenanceFrom || '08:00';
+                                            workingTimeText = `تم الجدولة لأول دوام العمال الساعة ${fromTime}`;
+                                        } else if (req.category === 'fnb' || req.requestType === 'fnb') {
+                                            const fromTime = cooldowns.fnbFrom || '08:00';
+                                            workingTimeText = `تم الجدولة لأول دوام العمال الساعة ${fromTime}`;
+                                        } else {
+                                            const fromTime = cooldowns.requestsFrom || '08:00';
+                                            workingTimeText = `تم الجدولة لأول دوام العمال الساعة ${fromTime}`;
+                                        }
+                                        
+                                        infoEl.innerHTML = `${workingTimeText} - متبقي لبدء تنشيط الطلب: ${timeDisplay}`;
+                                    } catch (e) {
+                                        infoEl.innerHTML = `تم الجدولة لأول دوام العمال - متبقي: ${timeDisplay}`;
+                                    }
+                                } else {
+                                    infoEl.innerHTML = `تم الجدولة لأول دوام العمال - متبقي: ${timeDisplay}`;
+                                }
+                            }
+                        }
                     } else {
                         el.innerHTML = '<div style="color:var(--success); font-weight:bold;">بدء الآن</div>';
+                        const infoEl = document.getElementById(`req-scheduled-info-${req.id}`);
+                        if (infoEl) {
+                            infoEl.innerHTML = '';
+                        }
                     }
                 } else { 
                     // طلب نشط - عرض الوقت المنقضي منذ البدء بصيغة h:mm:ss أو m:ss
@@ -4212,7 +4561,7 @@ function renderMaintenanceCards() {
             }); 
         }
         
-        async function submitNewEntryToFirebase(mode, num, isScheduled, schedTimestamp, fullTimeString, roomType, isSuper, maintDetails, reqDetails, maintFile) {
+        async function submitNewEntryToFirebase(mode, num, isScheduled, schedTimestamp, fullTimeString, roomType, isSuper, maintDetails, reqDetails, maintFile, guestStatus = null, isImmediateMaintParam = null, isImmediateRequestParam = null) {
             if (!db) return;
             
             toggleSyncIndicator(true);
@@ -4226,15 +4575,19 @@ function renderMaintenanceCards() {
                     }
                 }
                 
+                // ✅ استخدام المعامل الممرر أو المتغير العام كبديل
+                const finalIsImmediateRequest = isImmediateRequestParam !== null ? isImmediateRequestParam : isImmediateRequest;
+                const finalIsImmediateMaint = isImmediateMaintParam !== null ? isImmediateMaintParam : isImmediateMaint;
+                
                 if (mode === 'request') {
                     const newRequest = { 
                         num, 
                         details: reqDetails, 
-                        schedTime: isImmediateRequest ? "🚨 فوري" : fullTimeString, 
+                        schedTime: finalIsImmediateRequest ? "🚨 فوري" : fullTimeString, 
                         schedTimestamp, 
-                        isUrgent: isImmediateRequest, 
+                        isUrgent: finalIsImmediateRequest, 
                         startTime: Date.now(), 
-                        status: isImmediateRequest ? 'active' : 'scheduled',
+                        status: finalIsImmediateRequest ? 'active' : 'scheduled',
                         type: 'request'
                     };
                     await db.collection('guestRequests').doc().set(newRequest, { merge: true });
@@ -4244,10 +4597,10 @@ function renderMaintenanceCards() {
                         num, 
                         maintDesc: maintDetails, 
                         maintImg: imgUrl, 
-                        schedTime: isImmediateMaint ? "🚨 فوري" : fullTimeString, 
+                        schedTime: finalIsImmediateMaint ? "🚨 عاجل" : fullTimeString, 
                         schedTimestamp, 
                         startTime: Date.now(), 
-                        status: isImmediateMaint ? 'active' : 'scheduled', 
+                        status: finalIsImmediateMaint ? 'active' : 'scheduled', 
                         history: [{
                             action: 'تسجيل', 
                             time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' }) 
@@ -4257,13 +4610,24 @@ function renderMaintenanceCards() {
                     await db.collection('activeMaintenance').doc().set(newMaint, { merge: true });
                     
                 } else if (mode === 'cleaning') {
+                    // ✅ استخدام guestStatus الممرر كمعامل، أو من DOM كبديل
+                    let finalGuestStatus = guestStatus;
+                    if (!finalGuestStatus) {
+                        if (roomType === 'stay') {
+                            const guestStatusEl = document.getElementById('inpGuestStatus');
+                            finalGuestStatus = guestStatusEl ? guestStatusEl.value : 'in';
+                        } else {
+                            finalGuestStatus = 'out';
+                        }
+                    }
+                    
                     const newRoom = { 
                         num, 
                         type: roomType, 
                         status: isScheduled ? 'scheduled' : 'acknowledging', 
                         startTime: Date.now(), 
                         deadline: Date.now() + HOTEL_CONFIG.times.TRAVEL, 
-                        guestStatus: roomType === 'stay' ? document.getElementById('inpGuestStatus').value : 'out', 
+                        guestStatus: finalGuestStatus, 
                         // تم حذف undoExpiry 
                         historyLogs: [{ 
                             action: 'إضافة', 
@@ -4709,6 +5073,50 @@ function renderMaintenanceCards() {
                 const roomRef = db.collection('rooms').doc(activeRoomId);
                 batch.delete(roomRef);
                 
+                // ✅ حذف جميع طلبات التنظيف المرتبطة بالغرفة من guestRequests
+                try {
+                    const cleaningRequestsSnapshot = await db.collection('guestRequests')
+                        .where('num', '==', roomNum)
+                        .where('requestType', '==', 'cleaning')
+                        .get();
+                    
+                    cleaningRequestsSnapshot.forEach(doc => {
+                        const reqData = doc.data();
+                        // حذف فقط الطلبات النشطة (غير المكتملة)
+                        if (reqData.status !== 'completed' && !reqData.finishTime) {
+                            batch.delete(doc.ref);
+                            console.log(`✅ تم حذف طلب تنظيف مرتبط بالغرفة ${roomNum}:`, doc.id);
+                        }
+                    });
+                } catch (e) {
+                    console.error('Error deleting cleaning requests:', e);
+                }
+                
+                // ✅ إزالة فورية من appState.rooms قبل commit لمنع عودتها بعد الريفريش
+                appState.rooms = appState.rooms.filter(r => r.id !== activeRoomId);
+                
+                // ✅ إضافة ID الغرفة إلى قائمة المحذوفات محلياً لمنع عودتها بعد الريفريش
+                if (!appState.deletedRoomIds) {
+                    appState.deletedRoomIds = [];
+                }
+                appState.deletedRoomIds.push(activeRoomId);
+                
+                // ✅ إضافة رقم الغرفة إلى قائمة المحذوفة أيضاً (للفحص في guest-engine.js)
+                if (!appState.deletedRoomNums) {
+                    appState.deletedRoomNums = [];
+                }
+                appState.deletedRoomNums.push(roomNum);
+                
+                // ✅ تنظيف قائمة المحذوفات بعد 5 دقائق (لضمان عدم عودة الغرفة بعد الريفريش)
+                setTimeout(() => {
+                    if (appState.deletedRoomIds) {
+                        appState.deletedRoomIds = appState.deletedRoomIds.filter(id => id !== activeRoomId);
+                    }
+                    if (appState.deletedRoomNums) {
+                        appState.deletedRoomNums = appState.deletedRoomNums.filter(num => num !== roomNum);
+                    }
+                }, 5 * 60 * 1000); // 5 دقائق
+                
                 await batch.commit();
                 
                 // حساب النقاط
@@ -4739,6 +5147,10 @@ function renderMaintenanceCards() {
                     confirmBtn.disabled = false;
                     confirmBtn.style.opacity = '1';
                     confirmBtn.style.pointerEvents = 'auto';
+                    confirmBtn.classList.remove('btn-loading');
+                    if (confirmBtn.dataset.originalText) {
+                        confirmBtn.innerHTML = confirmBtn.dataset.originalText;
+                    }
                 }
                 
                 // ✅ تحديث الواجهة فوراً (إعادة رسم كاملة)
@@ -4761,6 +5173,10 @@ function renderMaintenanceCards() {
                     confirmBtn.disabled = false;
                     confirmBtn.style.opacity = '1';
                     confirmBtn.style.pointerEvents = 'auto';
+                    confirmBtn.classList.remove('btn-loading');
+                    if (confirmBtn.dataset.originalText) {
+                        confirmBtn.innerHTML = confirmBtn.dataset.originalText;
+                    }
                 }
                 
                 // ✅ إعادة تعيين activeRoomId
@@ -5181,11 +5597,28 @@ function renderMaintenanceCards() {
                     const logRef = db.collection('guestRequestsLog').doc();
                     batch.set(logRef, logEntry, { merge: true });
                     
-                    // حذف من الطلبات النشطة - استخدام id الصحيح
+                    // ✅ حذف من الطلبات النشطة - استخدام id الصحيح
+                    // إذا كان طلب فحص، يجب حذفه من inspectionCards أيضاً
+                    if (req.isInspection && req.inspectionData && req.inspectionData.id) {
+                        // حذف من inspectionCards
+                        const inspectionRef = db.collection('inspectionCards').doc(req.inspectionData.id);
+                        batch.delete(inspectionRef);
+                    }
+                    
+                    // حذف من guestRequests (إذا كان موجوداً في Firebase)
                     const reqRef = db.collection('guestRequests').doc(String(id));
                     batch.delete(reqRef);
                     
                     await batch.commit();
+                    
+                    // ✅ إزالة الطلب من appState مباشرة لمنع إعادة الظهور
+                    appState.guestRequests = appState.guestRequests.filter(r => r.id !== id);
+                    
+                    // ✅ إضافة إلى السجل المحلي أيضاً
+                    if (!appState.guestRequestsLog) {
+                        appState.guestRequestsLog = [];
+                    }
+                    appState.guestRequestsLog.push(logEntry);
                     
                     // تحديث الواجهة مباشرة
                     smartUpdate();
@@ -5400,6 +5833,37 @@ function renderMaintenanceCards() {
                         batch.delete(doc.ref);
                     });
                     
+                    // ✅ أرشفة طلبات الفحص أيضاً
+                    const inspectionSnapshot = await db.collection('inspectionCards').where('branch', '==', 'default').get();
+                    inspectionSnapshot.forEach(doc => {
+                        const inspection = doc.data();
+                        const logEntry = {
+                            num: inspection.roomNum || inspection.num,
+                            details: inspection.type === 'supervisor' 
+                                ? `تقرير فحص مشرف - ${inspection.urgencyText || ''} - النزيل: ${inspection.guestStatusText || ''}`
+                                : inspection.type === 'minibar' 
+                                ? `تقرير فحص الميني بار - غرفة ${inspection.roomNum}`
+                                : inspection.type === 'damages'
+                                ? `تقرير فحص تلفيات - غرفة ${inspection.roomNum}`
+                                : inspection.type === 'lostfound'
+                                ? `تقرير فحص مفقودات - غرفة ${inspection.roomNum}`
+                                : `تقرير فحص - غرفة ${inspection.roomNum}`,
+                            finishTime: now,
+                            status: 'ملغاة - بداية شفت جديد',
+                            id: now + Math.random(),
+                            isInspection: true
+                        };
+                        
+                        // إضافة إلى سجل الطلبات
+                        const reqLogRef = db.collection('guestRequestsLog').doc();
+                        batch.set(reqLogRef, logEntry, { merge: true });
+                        // حذف من النشطة
+                        batch.delete(doc.ref);
+                    });
+                    
+                    // ✅ إزالة جميع الطلبات من appState بعد الأرشفة
+                    appState.guestRequests = [];
+                    
                     // أرشفة الصيانة النشطة
                     const maintenanceSnapshot = await db.collection('activeMaintenance').where('status', '!=', 'scheduled').get();
                     maintenanceSnapshot.forEach(doc => {
@@ -5420,6 +5884,20 @@ function renderMaintenanceCards() {
                     });
                     
                     await batch.commit();
+                    
+                    // ✅ تنظيف appState بشكل كامل لمنع ظهور عمليات سابقة بعد الريفريش
+                    appState.rooms = [];
+                    appState.guestRequests = [];
+                    appState.activeMaintenance = [];
+                    appState.log = [];
+                    appState.guestRequestsLog = [];
+                    appState.completedMaintenanceLog = [];
+                    
+                    // ✅ إعادة رسم الواجهة فوراً
+                    renderRoomCards();
+                    renderGuestRequests();
+                    renderMaintenanceCards();
+                    renderCleaningLog();
                     
                     // إنشاء تقرير الشفت
                     const currentDate = new Date().toLocaleDateString('ar-EG', { 
@@ -5469,13 +5947,23 @@ function renderMaintenanceCards() {
         // ===============================================
         
         function showAdvancedReports() {
+            if (typeof toggleSideMenu === 'function') {
             toggleSideMenu();
-            document.getElementById('advanced-reports-modal').style.display = 'flex';
+            }
+            const modal = document.getElementById('advanced-reports-modal');
+            if (modal) {
+                modal.style.display = 'flex';
             switchReportTab('productivity');
+            } else {
+                console.error('advanced-reports-modal not found');
+            }
         }
         
         function closeAdvancedReports() {
-            document.getElementById('advanced-reports-modal').style.display = 'none';
+            const modal = document.getElementById('advanced-reports-modal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
         }
         
         function switchReportTab(tab) {
@@ -5784,22 +6272,53 @@ function renderMaintenanceCards() {
                     // تم حذف كود undoExpiry
                     
                     if (change.type === 'added') {
-                        // إضافة غرفة جديدة
+                        // ✅ إضافة غرفة جديدة مع فحص صارم للتكرار
                         const existingIndex = appState.rooms.findIndex(r => r.id === roomData.id);
                         if (existingIndex === -1) {
+                            // ✅ فحص إضافي: التحقق من عدم وجود غرفة مكررة بنفس الرقم والحالة
+                            const duplicate = appState.rooms.find(r => 
+                                r.num == roomData.num && 
+                                r.status === roomData.status &&
+                                r.status !== 'scheduled' &&
+                                r.status !== 'completed'
+                            );
+                            // ✅ فحص إضافي: التأكد من أن الغرفة ليست محذوفة محلياً
+                            const isLocallyDeleted = appState.deletedRoomIds && appState.deletedRoomIds.includes(roomData.id);
+                            if (!duplicate && !isLocallyDeleted) {
                             appState.rooms.push(roomData);
+                            }
                         }
                     } else if (change.type === 'modified') {
                         // تحديث غرفة موجودة
                         const index = appState.rooms.findIndex(r => r.id === roomData.id);
                         if (index !== -1) {
+                            // ✅ فحص: التأكد من أن الغرفة ليست محذوفة محلياً
+                            const isLocallyDeleted = appState.deletedRoomIds && appState.deletedRoomIds.includes(roomData.id);
+                            if (!isLocallyDeleted) {
                             appState.rooms[index] = roomData;
+                            }
                         } else {
+                            // ✅ إذا لم تكن موجودة، أضفها فقط إذا لم تكن مكررة أو محذوفة
+                            const duplicate = appState.rooms.find(r => 
+                                r.num == roomData.num && 
+                                r.status === roomData.status &&
+                                r.status !== 'scheduled' &&
+                                r.status !== 'completed'
+                            );
+                            const isLocallyDeleted = appState.deletedRoomIds && appState.deletedRoomIds.includes(roomData.id);
+                            if (!duplicate && !isLocallyDeleted) {
                     appState.rooms.push(roomData);
+                            }
                         }
                     } else if (change.type === 'removed') {
-                        // حذف غرفة
+                        // ✅ حذف غرفة - إزالة فورية من appState
                         appState.rooms = appState.rooms.filter(r => r.id !== roomData.id);
+                        // ✅ إزالة من قائمة المحذوفات محلياً بعد فترة (تنظيف)
+                        if (appState.deletedRoomIds) {
+                            setTimeout(() => {
+                                appState.deletedRoomIds = appState.deletedRoomIds.filter(id => id !== roomData.id);
+                            }, 60000); // تنظيف بعد دقيقة
+                        }
                     }
                 });
                 
@@ -5855,6 +6374,7 @@ function renderMaintenanceCards() {
                 snapshot.forEach(doc => {
                     appState.completedMaintenanceLog.push({ id: doc.id, ...doc.data() });
                 });
+                renderLogSection(); // ✅ تحديث السجل عند تغيير الصيانة المكتملة
                 smartUpdate();
             }, error => {
                 console.error("Completed maintenance listener error:", error);
@@ -5864,12 +6384,43 @@ function renderMaintenanceCards() {
             db.collection('guestRequests').onSnapshot(snapshot => {
                 snapshot.docChanges().forEach(change => {
                     const reqData = { id: change.doc.id, ...change.doc.data() };
+                    
+                    // ✅ تجاهل الطلبات المكتملة أو المحذوفة
+                    if (reqData.status === 'completed' || reqData.status === 'deleted') {
+                        appState.guestRequests = appState.guestRequests.filter(r => r.id !== reqData.id);
+                        return;
+                    }
+                    
                     if (change.type === 'added' || change.type === 'modified') {
+                        // ✅ منع التكرار: التحقق من وجود الطلب بنفس ID
                         const index = appState.guestRequests.findIndex(r => r.id === reqData.id);
                         if (index !== -1) {
+                            // تحديث الطلب الموجود فقط إذا لم يكن مكتملاً
+                            if (reqData.status !== 'completed' && reqData.status !== 'deleted') {
                             appState.guestRequests[index] = reqData;
                         } else {
+                                appState.guestRequests = appState.guestRequests.filter(r => r.id !== reqData.id);
+                            }
+                        } else {
+                            // ✅ تجاهل الطلبات المكتملة عند الإضافة
+                            if (reqData.status === 'completed' || reqData.status === 'deleted') {
+                                return;
+                            }
+                            
+                            // ✅ فحص صارم للتكرار: التحقق من عدم وجود طلب مكرر
+                            const duplicate = appState.guestRequests.find(r => 
+                                r.id === reqData.id || // نفس ID
+                                (r.num == reqData.num && 
+                                 r.requestType === reqData.requestType &&
+                                 (r.details === reqData.details || (!r.details && !reqData.details)) &&
+                                 r.status === reqData.status &&
+                                 r.status !== 'completed' &&
+                                 r.status !== 'deleted' &&
+                                 Math.abs((r.startTime || 0) - (reqData.startTime || 0)) < 3000) // نفس الوقت تقريباً (3 ثواني)
+                            );
+                            if (!duplicate) {
                             appState.guestRequests.push(reqData);
+                            }
                         }
                         
                         // تحويل طلبات النظافة من QR إلى غرف في Firebase تلقائياً
@@ -5912,6 +6463,7 @@ function renderMaintenanceCards() {
                             });
                         }
                     } else if (change.type === 'removed') {
+                        // ✅ حذف طلب - إزالة فورية من appState
                         appState.guestRequests = appState.guestRequests.filter(r => r.id !== reqData.id);
                     }
                 });
@@ -5928,9 +6480,70 @@ function renderMaintenanceCards() {
                 snapshot.forEach(doc => {
                     appState.guestRequestsLog.push({ id: doc.id, ...doc.data() });
                 });
+                renderLogSection(); // ✅ تحديث السجل عند تغيير طلبات النزلاء المكتملة
                 smartUpdate();
             }, error => {
                 console.error("Guest requests log listener error:", error);
+            });
+            
+            // استماع لطلبات الفحص (inspectionCards) - إضافة إلى قسم الطلبات
+            db.collection('inspectionCards').where('branch', '==', 'default')
+                .orderBy('timestamp', 'desc')
+                .limit(100)
+                .onSnapshot(snapshot => {
+                    // تحويل طلبات الفحص إلى طلبات عادية للعرض
+                    snapshot.docChanges().forEach(change => {
+                        const inspectionData = { id: change.doc.id, ...change.doc.data() };
+                        const inspectionRequestId = `inspection_${inspectionData.id}`;
+                        
+                        if (change.type === 'added' || change.type === 'modified') {
+                            // ✅ تجاهل الطلبات المكتملة
+                            if (inspectionData.status === 'completed' || inspectionData.status === 'deleted') {
+                                appState.guestRequests = appState.guestRequests.filter(r => r.id !== inspectionRequestId);
+                                return;
+                            }
+                            
+                            // إنشاء طلب فحص للعرض في قسم الطلبات
+                            const inspectionRequest = {
+                                id: inspectionRequestId,
+                                num: inspectionData.roomNum || inspectionData.num,
+                                requestType: 'inspection',
+                                details: inspectionData.type === 'supervisor' 
+                                    ? (inspectionData.fromReception 
+                                        ? `طلب فحص غرفة ${inspectionData.roomNum || inspectionData.num} - ${inspectionData.urgencyText || ''} - النزيل: ${inspectionData.guestStatusText || ''}`
+                                        : `تقرير فحص للمشرف - ${inspectionData.urgencyText || ''} - النزيل: ${inspectionData.guestStatusText || ''}`)
+                                    : inspectionData.type === 'minibar' 
+                                    ? `تقرير فحص الميني بار - غرفة ${inspectionData.roomNum}`
+                                    : inspectionData.type === 'damages'
+                                    ? `تقرير فحص تلفيات - غرفة ${inspectionData.roomNum}`
+                                    : inspectionData.type === 'lostfound'
+                                    ? `تقرير فحص مفقودات - غرفة ${inspectionData.roomNum}`
+                                    : inspectionData.type === 'excellent'
+                                    ? `تقرير فحص - حالة ممتازة - غرفة ${inspectionData.roomNum}`
+                                    : `تقرير فحص - غرفة ${inspectionData.roomNum}`,
+                                status: 'active',
+                                startTime: inspectionData.timestamp || Date.now(),
+                                fromGuest: false,
+                                isInspection: true,
+                                inspectionData: inspectionData
+                            };
+                            
+                            // إضافة أو تحديث في appState.guestRequests
+                            const index = appState.guestRequests.findIndex(r => r.id === inspectionRequestId);
+                            if (index !== -1) {
+                                appState.guestRequests[index] = inspectionRequest;
+                            } else {
+                                appState.guestRequests.push(inspectionRequest);
+                            }
+                        } else if (change.type === 'removed') {
+                            // ✅ حذف طلب الفحص - إزالة فورية
+                            appState.guestRequests = appState.guestRequests.filter(r => r.id !== inspectionRequestId);
+                        }
+                    });
+                    renderGuestRequests();
+                    smartUpdate(false);
+                }, error => {
+                    console.error("Inspection cards listener error:", error);
             });
             
             // استماع للإعدادات العامة
@@ -5952,6 +6565,63 @@ function renderMaintenanceCards() {
             }, error => {
                 console.error("Settings listener error:", error);
             });
+        }
+        
+        // ===============================================
+        // == إعداد أزرار القائمة الجانبية ===============
+        // ===============================================
+        
+        function setupSideMenuButtons() {
+            // ✅ دالة آمنة لاستدعاء الدوال مع التحقق من وجودها
+            const safeCall = (fnName) => {
+                try {
+                    if (typeof window[fnName] === 'function') {
+                        window[fnName]();
+                        if (typeof hapticFeedback === 'function') {
+                            hapticFeedback('medium');
+                        }
+                    } else {
+                        console.warn(`⚠️ ${fnName} is not defined`);
+                        if (typeof showMiniAlert === 'function') {
+                            showMiniAlert(`⚠️ الميزة غير متاحة حالياً: ${fnName}`, 'warning');
+                        }
+                    }
+                } catch (e) {
+                    console.error(`❌ Error calling ${fnName}:`, e);
+                    if (typeof showMiniAlert === 'function') {
+                        showMiniAlert(`❌ خطأ في فتح الميزة`, 'error');
+                    }
+                }
+            };
+            
+            // ✅ إعداد event listeners للأزرار مع retry mechanism
+            const setupButton = (btnId, fnName, retries = 3) => {
+                const btn = document.getElementById(btnId);
+                if (btn) {
+                    // إزالة event listeners القديمة إن وجدت
+                    const newBtn = btn.cloneNode(true);
+                    btn.parentNode.replaceChild(newBtn, btn);
+                    
+                    // إضافة event listener جديد
+                    newBtn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        safeCall(fnName);
+                    });
+                    console.log(`✅ تم إعداد زر: ${btnId} -> ${fnName}`);
+                } else if (retries > 0) {
+                    // Retry بعد 500ms
+                    setTimeout(() => setupButton(btnId, fnName, retries - 1), 500);
+                } else {
+                    console.warn(`⚠️ لم يتم العثور على الزر: ${btnId}`);
+                }
+            };
+            
+            // ✅ إعداد جميع الأزرار
+            setupButton('btn-shift-log', 'showShiftLog');
+            setupButton('btn-news-ticker', 'showNewsTickerEditor');
+            setupButton('btn-advanced-reports', 'showAdvancedReports');
+            setupButton('btn-maint-scheduler', 'showMaintenanceScheduler');
         }
         
         // ===============================================
@@ -5977,6 +6647,12 @@ function renderMaintenanceCards() {
             
             // إعداد مستمعي Firebase
             setupFirebaseListeners();
+            
+            // ✅ إعداد event listeners للأزرار المحسّنة (بدلاً من inline onclick)
+            // استدعاء فوري + retry بعد تحميل DOM
+            setupSideMenuButtons();
+            setTimeout(() => setupSideMenuButtons(), 1000); // Retry بعد ثانية
+            setTimeout(() => setupSideMenuButtons(), 3000); // Retry بعد 3 ثواني
             
             // تحديث المؤقتات كل ثانية
             setInterval(updateTimersDOM, 1000);
@@ -6300,15 +6976,30 @@ function renderMaintenanceCards() {
                 langBtn.textContent = langNames[lang] || '🌐';
             }
             
-            // تحديث عناوين الأقسام
-            document.querySelectorAll('.sec-title span').forEach((el, i) => {
-                if (i === 0) el.innerHTML = `📈 ${t('todayStats')}`;
-                else if (el.textContent.includes('تتبع') || el.textContent.includes('Room Tracking')) el.innerHTML = `🚪 ${t('roomTracking')}`;
-                else if (el.textContent.includes('طلبات تنظيف') || el.textContent.includes('Cleaning Requests')) el.innerHTML = `🧹 ${t('cleaningRequests') || 'طلبات تنظيف ( خارج - ساكن )'}`;
-                else if (el.textContent.includes('طلبات') || el.textContent.includes('Guest Requests')) el.innerHTML = `🛎️ ${t('guestRequests')}`;
-                else if (el.textContent.includes('الصيانة') || el.textContent.includes('Maintenance')) el.innerHTML = `🛠️ ${t('maintenanceSection')}`;
-                else if (el.textContent.includes('السجل') || el.textContent.includes('Log')) el.innerHTML = `🧹 ${t('logCompleted')}`;
-            });
+            // ✅ تحديث عناوين الأقسام باستخدام IDs محددة
+            // تحديث إحصائيات اليوم
+            const statsTitle = document.querySelector('.sec-title:first-of-type span');
+            if (statsTitle) statsTitle.innerHTML = `📈 ${t('todayStats')}`;
+            
+            // تحديث عنوان تتبع الغرف
+            const roomTrackingTitle = document.querySelector('#room-tracking-section .sec-title span, .section:has(#rooms-container) .sec-title span');
+            if (roomTrackingTitle) roomTrackingTitle.innerHTML = `🚪 ${t('roomTracking')}`;
+            
+            // ✅ تحديث عنوان طلبات تنظيف باستخدام ID
+            const cleaningTitle = document.getElementById('cleaning-requests-title');
+            if (cleaningTitle) cleaningTitle.innerHTML = `🧹 ${t('cleaningRequests')}`;
+            
+            // ✅ تحديث عنوان طلبات النزلاء
+            const guestRequestsTitle = document.querySelector('#guest-requests-section-title span, #guest-requests-section .sec-title span');
+            if (guestRequestsTitle) guestRequestsTitle.innerHTML = `🛎️ ${t('guestRequests')}`;
+            
+            // ✅ تحديث عنوان الصيانة
+            const maintenanceTitle = document.querySelector('#maintenance-section .sec-title span');
+            if (maintenanceTitle) maintenanceTitle.innerHTML = `🛠️ ${t('maintenanceSection')}`;
+            
+            // ✅ تحديث عنوان السجل
+            const logTitle = document.getElementById('log-title-text');
+            if (logTitle) logTitle.innerHTML = `🧹 ${t('logCompleted')}`;
             
             // تحديث الإحصائيات - استخدام الترجمات
             const statLabels = {
@@ -6710,213 +7401,860 @@ function renderMaintenanceCards() {
         }
         
         function toggleFABMenu() {
-            const fabMenu = document.getElementById('fab-menu');
-            if (!fabMenu) return;
-            
-            const isVisible = fabMenu.classList.contains('open');
-            if (isVisible) {
-                fabMenu.classList.remove('open');
-                fabMenu.style.display = 'none';
-                fabMenu.querySelectorAll('.fab-option').forEach(btn => {
-                    btn.style.transform = 'translate(-50%, -50%)';
-                });
-            } else {
-                fabMenu.style.display = 'block';
-                positionFABOptions();
-                requestAnimationFrame(() => fabMenu.classList.add('open'));
-            }
-            
+            // ✅ فتح نافذة موحدة جميلة مع التبويبات الأربعة
+            showUnifiedAddModal();
             hapticFeedback('medium');
         }
         
-        function openFABOption(type) {
-            // إضافة تأثير الضغط على الزر
-            const button = document.querySelector(`.fab-option[data-fab-type="${type}"]`);
-            if (button) {
-                button.classList.add('fab-pressed');
-                setTimeout(() => {
-                    button.classList.remove('fab-pressed');
-                }, 300);
+        function showUnifiedAddModal() {
+            // ✅ إنشاء نافذة موحدة مع التبويبات الأربعة بنفس الاستايل
+            const modalHTML = `
+                <div class="modal-overlay" id="unified-add-modal" style="display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); z-index: 2000; align-items: center; justify-content: center; padding: 20px;">
+                    <div class="modal-content" style="max-width: 500px; width: 100%; background: linear-gradient(145deg, #ffffff, #f8fafc); border-radius: 24px; padding: 0; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; max-height: 90vh; overflow-y: auto;">
+                        <div style="padding: 20px;">
+                            <div style="display:flex; gap:10px; margin-bottom:20px;">
+                                <button onclick="switchUnifiedTab('cleaning')" id="unified-tab-cleaning" class="add-mode-tab active">🧹 تنظيف</button>
+                                <button onclick="switchUnifiedTab('request')" id="unified-tab-request" class="add-mode-tab">🛎️ طلبات</button>
+                                <button onclick="switchUnifiedTab('maintenance')" id="unified-tab-maintenance" class="add-mode-tab">🛠️ صيانة</button>
+                                <button onclick="switchUnifiedTab('inspection')" id="unified-tab-inspection" class="add-mode-tab">📋 فحص الغرفة</button>
+                            </div>
+                            <h3 style="color:var(--primary); margin-top:0; font-size:1.1rem;" id="unified-modal-title">إضافة غرفة جديدة</h3>
+                            
+                            <div id="unified-tab-content">
+                                <!-- سيتم ملؤها ديناميكياً -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // إزالة أي نافذة موجودة مسبقاً
+            const existing = document.getElementById('unified-add-modal');
+            if (existing) existing.remove();
+            
+            // إضافة النافذة الجديدة
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+            
+            // فتح التبويب الأول
+            switchUnifiedTab('cleaning');
+            
+            // إغلاق عند الضغط خارج النافذة
+            setTimeout(() => {
+                const modal = document.getElementById('unified-add-modal');
+                if (modal) {
+                    modal.addEventListener('click', (e) => {
+                        if (e.target === modal) {
+                            closeUnifiedAddModal();
+                        }
+                    });
+                }
+            }, 100);
+        }
+        
+        function closeUnifiedAddModal() {
+            const modal = document.getElementById('unified-add-modal');
+            if (modal) modal.remove();
+        }
+        
+        function switchUnifiedTab(type) {
+            // تحديث الأزرار
+            document.querySelectorAll('#unified-add-modal .add-mode-tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`unified-tab-${type}`);
+            if (activeBtn) activeBtn.classList.add('active');
+            
+            const content = document.getElementById('unified-tab-content');
+            const titleEl = document.getElementById('unified-modal-title');
+            if (!content) return;
+            
+            hapticFeedback('light');
+            
+            // تحديث العنوان
+            if (titleEl) {
+                const titles = {
+                    cleaning: t('addNewRoom'),
+                    request: appState.language === 'ar' ? 'إضافة طلب نزيل' : 'Add Guest Request',
+                    maintenance: appState.language === 'ar' ? 'تسجيل صيانة' : 'Register Maintenance',
+                    inspection: '📋 فحص الغرفة'
+                };
+                titleEl.innerText = titles[type] || titles.cleaning;
             }
             
-            toggleFABMenu();
+            if (type === 'cleaning') {
+                // ✅ تنظيف - نفس محتوى addRoomModal
+                content.innerHTML = `
+                    <div style="margin-bottom:12px; text-align:right;">
+                        <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">رقم الغرفة</label>
+                        <input type="number" id="unified-inpRoomNum" placeholder="مثال: 101" 
+                               onclick="this.select()" 
+                               oninput="this.value = Math.floor(this.value); checkUnifiedDuplicate(); suggestUnifiedRoomType();" 
+                               step="1"
+                               style="font-size:1.1rem; font-weight:bold; text-align:center; width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); margin-top: 6px;">
+                        <div id="unified-room-dup-alert" style="font-size:0.7rem; font-weight:bold; margin-top:6px; padding:4px; border-radius:4px; text-align:right; display:none; color:var(--danger); background:rgba(239, 68, 68, 0.1);"></div>
+                    </div>
+                    
+                    <div id="unified-cleaning-options" style="background:linear-gradient(135deg, rgba(0,188,212,0.05), rgba(76,175,80,0.05)); padding:16px; border-radius:16px; border:2px solid rgba(0,188,212,0.2);">
+                        <div style="margin-bottom:12px; display:flex; flex-wrap:wrap; gap:6px;">
+                            <button onclick="setUnifiedRoomType('out')" class="glass-btn modal-select-btn" id="unified-opt_out" style="flex:1; min-width:80px; font-size:0.7rem !important; padding:0 8px !important;">🚨 خروج</button>
+                            <button onclick="setUnifiedRoomType('stay')" class="glass-btn modal-select-btn" id="unified-opt_stay" style="flex:1; min-width:80px; font-size:0.7rem !important; padding:0 8px !important;">📅 مجدول</button>
+                            <button onclick="setUnifiedRoomType('dnd')" class="glass-btn modal-select-btn" id="unified-opt_dnd" style="flex:1; min-width:70px; font-size:0.7rem !important; padding:0 8px !important;">🚫 DND</button>
+                        </div>
+                        <input type="hidden" id="unified-inpRoomType">
+                        <div id="unified-stayOptionsCleaning" style="display:none; margin-bottom:12px; text-align:right;">
+                            <div class="in-out-toggle" style="display:flex; gap:8px; margin-bottom:12px;">
+                                <button onclick="setUnifiedGuestStatus('in')" class="io-btn" id="unified-gst_clean_in">👤 داخل</button>
+                                <button onclick="setUnifiedGuestStatus('out')" class="io-btn" id="unified-gst_clean_out">🚶 خارج</button>
+                            </div>
+                            <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">⏰ وقت التنظيف</label>
+                            <input type="time" id="unified-systemTimeInput" value="12:00" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-size:0.95rem; margin-top: 6px;">
+                        </div>
+                        <div class="toggle-container" style="background: rgba(255, 152, 0, 0.1); border-color: rgba(255, 152, 0, 0.3);">
+                            <div class="toggle-label" style="color: var(--maint-color); font-size:0.85rem;">🚀 Super Turbo (-5 min)</div>
+                            <label class="switch">
+                                <input type="checkbox" id="unified-inpSuperTurbo">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <input type="hidden" id="unified-inpGuestStatus" value="in">
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button onclick="submitUnifiedCleaning()" class="glass-btn submit-action-btn" style="flex: 1;">إضافة وإرسال 🚀</button>
+                        <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                    </div>
+                `;
+            } else if (type === 'request') {
+                // ✅ طلبات - نفس محتوى addRoomModal
+                content.innerHTML = `
+                    <div style="margin-bottom:12px; text-align:right;">
+                        <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">رقم الغرفة</label>
+                        <input type="number" id="unified-inpRoomNum-req" placeholder="مثال: 101" 
+                               onclick="this.select()" 
+                               oninput="this.value = Math.floor(this.value);" 
+                               step="1"
+                               style="font-size:1.1rem; font-weight:bold; text-align:center; width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); margin-top: 6px;">
+                    </div>
+                    
+                    <div id="unified-request-options" style="margin-bottom:12px; background:linear-gradient(135deg, rgba(168,85,247,0.05), rgba(236,72,153,0.05)); padding:16px; border-radius:16px; border:2px solid rgba(168,85,247,0.2);">
+                        <div style="display:flex; gap:8px; margin-bottom:12px;">
+                            <button onclick="setUnifiedRequestMode('immediate')" id="unified-btn-req-imm" class="glass-btn modal-select-btn">🚨 فوري</button>
+                            <button onclick="setUnifiedRequestMode('scheduled')" id="unified-btn-req-sch" class="glass-btn modal-select-btn">📅 مجدول</button>
+                        </div>
+                        <textarea id="unified-inpRequestDetails" rows="3" placeholder="اكتب طلب النزيل (منشفة - لحاف - وهكذا)" 
+                                  style="padding:14px; border-radius:14px; border:2px solid var(--request-color); background:white; font-size:0.95rem; font-weight:500; resize:none; width: 100%; box-sizing: border-box;"
+                                  oninput="checkUnifiedQuickCodes()"></textarea>
+                        <div id="unified-quick-codes-suggestions" class="quick-codes-suggestions"></div>
+                        <div id="unified-request-schedule-container" style="display:none; margin-top:12px;">
+                            <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">⏰ موعد الطلب</label>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <input type="date" id="unified-systemDateInputReq" min="" style="flex:0.8; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-size:0.9rem;">
+                                <input type="time" id="unified-systemTimeInputReq" value="12:00" min="" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-size:0.95rem;">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button onclick="submitUnifiedRequest()" class="glass-btn submit-action-btn" style="flex: 1;">إضافة وإرسال 🚀</button>
+                        <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                    </div>
+                `;
+            } else if (type === 'maintenance') {
+                // ✅ صيانة - نفس محتوى addRoomModal
+                content.innerHTML = `
+                    <div style="margin-bottom:12px; text-align:right;">
+                        <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">رقم الغرفة</label>
+                        <input type="number" id="unified-inpRoomNum-maint" placeholder="مثال: 101" 
+                               onclick="this.select()" 
+                               oninput="this.value = Math.floor(this.value);" 
+                               step="1"
+                               style="font-size:1.1rem; font-weight:bold; text-align:center; width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); margin-top: 6px;">
+                    </div>
+                    
+                    <div id="unified-maintenance-options" style="margin-bottom:12px; background:linear-gradient(135deg, rgba(14,165,233,0.05), rgba(56,189,248,0.05)); padding:16px; border-radius:16px; border:2px solid rgba(14,165,233,0.2);">
+                        <div style="display:flex; gap:8px; margin-bottom:12px;">
+                            <button onclick="setUnifiedMaintMode('immediate')" id="unified-btn-maint-imm" class="glass-btn modal-select-btn">🚨 عاجل</button>
+                            <button onclick="setUnifiedMaintMode('scheduled')" id="unified-btn-maint-sch" class="glass-btn modal-select-btn">📅 مجدول</button>
+                        </div>
+                        <textarea id="unified-inpMaintDetails" rows="3" placeholder="اكتب وصف المشكلة..." style="padding:14px; border-radius:14px; border:2px solid var(--maint-color); background:white; font-size:0.95rem; font-weight:500; resize:none; width: 100%; box-sizing: border-box;"></textarea>
+                        <label class="modal-label" style="font-weight:bold; font-size:0.9rem; margin-top:10px;">صورة (اختياري)</label>
+                        <label for="unified-inpMaintImage" class="camera-icon-btn maint-image-upload" style="display:block; width:100%; padding:16px; text-align:center; font-size:1rem; cursor:pointer; border:2px dashed var(--maint-color); border-radius:10px; background:#f8fafc; transition:all 0.3s; margin-top:6px;">
+                            <div style="font-size:1.8rem; margin-bottom:6px;">📷</div>
+                            <div id="unified-click-to-upload-text" style="font-weight:600; color:var(--maint-color); font-size:0.85rem;">اضغط لرفع صورة</div>
+                        </label>
+                        <input type="file" accept="image/*" capture="environment" id="unified-inpMaintImage" style="display:none;">
+                        <div id="unified-maint-schedule-container" style="display:none; margin-top:12px;">
+                            <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">⏰ موعد الصيانة</label>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <input type="date" id="unified-systemDateInputMaint" min="" style="flex:0.8; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-size:0.9rem;">
+                                <input type="time" id="unified-systemTimeInputMaint" value="12:00" min="" style="flex:1; padding:10px; border-radius:8px; border:1px solid var(--border-color); font-size:0.95rem;">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; margin-top: 20px;">
+                        <button onclick="submitUnifiedMaintenance()" class="glass-btn submit-action-btn" style="flex: 1;">إضافة وإرسال 🚀</button>
+                        <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                    </div>
+                `;
+            } else if (type === 'inspection') {
+                // ✅ فحص الغرفة - نفس محتوى inspection-modal
+                content.innerHTML = `
+                    <div style="margin-bottom:12px; text-align:right;">
+                        <label class="modal-label" style="font-weight:bold; font-size:0.9rem;">رقم الغرفة</label>
+                        <input type="number" id="unified-inspection-room-num" placeholder="رقم الغرفة" 
+                               style="width: 100%; padding: 12px; border-radius: 10px; border: 2px solid var(--border-color); margin-top: 6px; text-align: center; font-size: 1.1rem;">
+                    </div>
+                    
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                        <button onclick="switchUnifiedInspectionMode('supervisor')" class="glass-btn inspection-mode-btn" id="unified-btn-supervisor-inspection">
+                            👔 إرسال للمشرف
+                        </button>
+                        <button onclick="switchUnifiedInspectionMode('reception')" class="glass-btn inspection-mode-btn active" id="unified-btn-reception-inspection">
+                            🏨 تسليم للاستقبال
+                        </button>
+                    </div>
+                    
+                    <div id="unified-supervisor-inspection-section" style="display: none; margin-bottom: 15px;">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                            <button onclick="setUnifiedSupervisorUrgency('urgent')" id="unified-supervisor-urgent-btn" class="glass-btn inspection-action-btn">
+                                🔴 عاجل
+                            </button>
+                            <button onclick="setUnifiedSupervisorUrgency('normal')" id="unified-supervisor-normal-btn" class="glass-btn inspection-action-btn">
+                                🟢 غير عاجل
+                            </button>
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                            <button onclick="setUnifiedSupervisorGuestStatus('inside')" id="unified-supervisor-guest-inside-btn" class="glass-btn inspection-action-btn">
+                                👤 النزيل بالغرفة
+                            </button>
+                            <button onclick="setUnifiedSupervisorGuestStatus('outside')" id="unified-supervisor-guest-outside-btn" class="glass-btn inspection-action-btn">
+                                🚪 النزيل بالخارج
+                            </button>
+                        </div>
+                        <div style="display: flex; gap: 10px; margin-top: 10px;">
+                            <button onclick="submitUnifiedSupervisorInspection()" class="glass-btn inspection-submit-btn" style="flex: 1;">📤 إرسال للمشرف</button>
+                            <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                        </div>
+                    </div>
+                    
+                    <div id="unified-reception-inspection-section">
+                        <div class="inspection-tabs" style="display: flex; gap: 8px; margin-bottom: 15px; border-bottom: 2px solid var(--border-color);">
+                            <button onclick="switchUnifiedInspectionTab('minibar')" class="inspection-tab active" id="unified-tab-minibar">🍫 الميني بار</button>
+                            <button onclick="switchUnifiedInspectionTab('damages')" class="inspection-tab" id="unified-tab-damages">🔨 الأضرار</button>
+                            <button onclick="switchUnifiedInspectionTab('lostfound')" class="inspection-tab" id="unified-tab-lostfound">☂️ مفقودات</button>
+                            <button onclick="switchUnifiedInspectionTab('excellent')" class="inspection-tab" id="unified-tab-excellent">✅ حالة ممتازة</button>
+                        </div>
+                        
+                        <div id="unified-inspection-minibar" class="inspection-tab-content" style="display: block;">
+                            <h4>اختر العناصر المستهلكة:</h4>
+                            <div class="minibar-items" id="unified-minibar-items-dynamic">
+                                <!-- سيتم ملؤها ديناميكياً -->
+                            </div>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button onclick="submitUnifiedInspection('minibar')" class="glass-btn inspection-submit-btn" style="flex: 1;">إرسال للاستقبال (فاتورة)</button>
+                                <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                            </div>
+                        </div>
+                        
+                        <div id="unified-inspection-damages" class="inspection-tab-content" style="display: none;">
+                            <h4>رفع صورة الأضرار:</h4>
+                            <label for="unified-damage-photo" class="camera-icon-btn" style="width: 100%; padding: 25px; text-align: center; font-size: 1.1rem; cursor: pointer; border: 2px dashed var(--border-color); border-radius: 12px; background: #f8fafc; transition: all 0.3s;">
+                                <div style="font-size: 2.5rem; margin-bottom: 10px;">📷</div>
+                                <div style="font-weight: 600; color: var(--text-main);">التقاط صورة الأضرار</div>
+                                <div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 5px;">اضغط للبدء</div>
+                            </label>
+                            <input type="file" accept="image/*" capture="environment" id="unified-damage-photo" style="display: none;">
+                            <div id="unified-damage-preview" style="display: none; margin-top: 10px;"></div>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button onclick="submitUnifiedInspection('damages')" class="glass-btn inspection-submit-btn" style="flex: 1;">إرسال للاستقبال (غرامة)</button>
+                                <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                            </div>
+                        </div>
+                        
+                        <div id="unified-inspection-lostfound" class="inspection-tab-content" style="display: none;">
+                            <h4>رفع صورة العنصر المفقود:</h4>
+                            <label for="unified-lostfound-photo" class="camera-icon-btn" style="width: 100%; padding: 25px; text-align: center; font-size: 1.1rem; cursor: pointer; border: 2px dashed var(--border-color); border-radius: 12px; background: #f8fafc; transition: all 0.3s;">
+                                <div style="font-size: 2.5rem; margin-bottom: 10px;">📷</div>
+                                <div style="font-weight: 600; color: var(--text-main);">التقاط صورة المفقودات</div>
+                                <div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 5px;">اضغط للبدء</div>
+                            </label>
+                            <input type="file" accept="image/*" capture="environment" id="unified-lostfound-photo" style="display: none;">
+                            <div id="unified-lostfound-preview" style="display: none; margin-top: 10px;"></div>
+                            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                                <button onclick="submitUnifiedInspection('lostfound')" class="glass-btn inspection-submit-btn" style="flex: 1;">إرسال للاستقبال</button>
+                                <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                            </div>
+                        </div>
+                        
+                        <div id="unified-inspection-excellent" class="inspection-tab-content" style="display: none;">
+                            <div style="text-align: center; padding: 20px;">
+                                <div style="font-size: 3rem; margin-bottom: 15px;">✅</div>
+                                <h4 style="color: var(--success); margin-bottom: 10px;">حالة ممتازة</h4>
+                                <p style="color: var(--text-sec); font-size: 0.9rem; margin-bottom: 20px;">الغرفة في حالة ممتازة ولا تحتاج أي إجراء</p>
+                                <div style="display: flex; gap: 10px;">
+                                    <button onclick="submitUnifiedInspection('excellent')" class="glass-btn inspection-submit-btn" style="flex: 1;">تأكيد ✅</button>
+                                    <button onclick="closeUnifiedAddModal()" class="glass-btn back-action-btn" style="flex: 1;">رجوع</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                // تحميل قائمة الميني بار (اختياري - لا يوجد modal موحد للفحص)
+                // تم إزالة استدعاء renderUnifiedInspectionModal لأنه غير موجود
+            }
             
-            if (type === 'inspection') {
-                // فتح نافذة الفحص مباشرة
-                const inspectionModal = document.getElementById('inspection-modal');
-                if (!inspectionModal) return;
-                
-                inspectionModal.style.display = 'flex';
-                
-                // إظهار مؤشر التحميل
-                showLoadingBar();
-                
-                // تهيئة نافذة الفحص
-                setTimeout(() => {
-                    openReceptionInspection();
-                    hideLoadingBar();
-                }, 100);
+            // تعيين الحد الأدنى للتاريخ والوقت
+            setUnifiedMinDateTime();
+        }
+        
+        // ===============================================
+        // == Unified Modal Helper Functions ============
+        // ===============================================
+        
+        // تنظيف
+        function setUnifiedRoomType(type) {
+            document.getElementById('unified-inpRoomType').value = type;
+            hapticFeedback('medium');
+            document.querySelectorAll('#unified-opt_out, #unified-opt_stay, #unified-opt_dnd').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            if (type === 'out') {
+                document.getElementById('unified-opt_out').classList.add('selected');
+            } else if (type === 'stay') {
+                document.getElementById('unified-opt_stay').classList.add('selected');
+                document.getElementById('unified-stayOptionsCleaning').style.display = 'block';
+            } else if (type === 'dnd') {
+                document.getElementById('unified-opt_dnd').classList.add('selected');
+            }
+        }
+        
+        function setUnifiedGuestStatus(status) {
+            document.getElementById('unified-inpGuestStatus').value = status;
+            hapticFeedback('light');
+            document.querySelectorAll('#unified-gst_clean_in, #unified-gst_clean_out').forEach(btn => {
+                btn.classList.remove('active', 'selected');
+            });
+            if (status === 'in') {
+                document.getElementById('unified-gst_clean_in').classList.add('active', 'selected');
             } else {
-                // تحديد الوضع
-                const mode = type === 'clean' ? 'cleaning' : type === 'request' ? 'request' : 'maintenance';
+                document.getElementById('unified-gst_clean_out').classList.add('active', 'selected');
+            }
+        }
+        
+        function checkUnifiedDuplicate() {
+            const num = document.getElementById('unified-inpRoomNum').value;
+            const alert = document.getElementById('unified-room-dup-alert');
+            if (!num || !alert) return;
+            const exists = appState.rooms.find(r => r.num === num);
+            if (exists) {
+                alert.style.display = 'block';
+                alert.textContent = `⚠️ الغرفة ${num} نشطة بالفعل`;
+            } else {
+                alert.style.display = 'none';
+            }
+        }
+        
+        function suggestUnifiedRoomType() {
+            // نفس منطق suggestRoomType
+        }
+        
+        function setUnifiedMinDateTime() {
+            const now = new Date();
+            const today = now.toISOString().split('T')[0];
+            const dateInputs = ['unified-systemDateInputReq', 'unified-systemDateInputMaint'];
+            dateInputs.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.min = today;
+            });
+        }
+        
+        async function submitUnifiedCleaning() {
+            const numEl = document.getElementById('unified-inpRoomNum');
+            const roomTypeEl = document.getElementById('unified-inpRoomType');
+            
+            if (!numEl || !roomTypeEl) {
+                showMiniAlert('⚠️ خطأ في تحميل النموذج', 'error');
+                return;
+            }
+            
+            const num = numEl.value;
+            const roomType = roomTypeEl.value;
+            
+            if (!num || !roomType) {
+                showMiniAlert('⚠️ أدخل رقم الغرفة واختر النوع', 'warning');
+                return;
+            }
+            
+            // ✅ جمع جميع البيانات قبل إغلاق النافذة
+            const guestInBtn = document.getElementById('unified-gst_clean_in');
+            const guestOutBtn = document.getElementById('unified-gst_clean_out');
+            let guestStatus = 'out'; // افتراضي
+            if (guestInBtn && guestInBtn.classList.contains('active')) {
+                guestStatus = 'in';
+            } else if (guestOutBtn && guestOutBtn.classList.contains('active')) {
+                guestStatus = 'out';
+            }
+            
+            const timeInput = document.getElementById('unified-systemTimeInput');
+            let timeValue = timeInput ? timeInput.value : '12:00';
+            
+            // ✅ تحويل الوقت إلى fullTimeString
+            const timeParts = timeValue.split(':');
+            const hours = parseInt(timeParts[0]) || 12;
+            const minutes = parseInt(timeParts[1]) || 0;
+            const period = hours >= 12 ? 'م' : 'ص';
+            const displayHours = hours % 12 || 12;
+            const fullTimeString = `اليوم - ${displayHours}:${minutes.toString().padStart(2, '0')} ${period}`;
+            
+            // ✅ حساب schedTimestamp إذا كان مجدول
+            const isScheduled = roomType === 'stay';
+            let schedTimestamp = null;
+            if (isScheduled) {
+                const now = new Date();
+                const selected = new Date();
+                selected.setHours(hours, minutes, 0, 0);
+                if (selected < new Date(now.getTime() - 60000)) {
+                    showMiniAlert("⚠️ الوقت المجدول في الماضي!", "warning");
+                    return;
+                }
+                schedTimestamp = selected.getTime();
+            }
+            
+            const superTurbo = document.getElementById('unified-inpSuperTurbo');
+            const isSuper = superTurbo ? superTurbo.checked : false;
+            
+            // ✅ إغلاق النافذة الموحدة
+            closeUnifiedAddModal();
+            
+            // ✅ إرسال الطلب مباشرة بدون فتح النافذة القديمة
+            hapticFeedback('medium');
+            
+            // ✅ استخدام submitNewEntryToFirebase مباشرة مع تمرير guestStatus
+            await submitNewEntryToFirebase('cleaning', num, isScheduled, schedTimestamp, fullTimeString, roomType, isSuper, null, null, null, guestStatus);
+            
+            // ✅ إضافة النقاط
+            addPoints(5, 'إضافة غرفة');
+        }
+        
+        // طلبات
+        let unifiedIsImmediateRequest = null;
+        
+        function setUnifiedRequestMode(mode) {
+            unifiedIsImmediateRequest = (mode === 'immediate');
+            hapticFeedback('medium');
+            document.querySelectorAll('#unified-btn-req-imm, #unified-btn-req-sch').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            if (unifiedIsImmediateRequest) {
+                document.getElementById('unified-btn-req-imm').classList.add('selected');
+                document.getElementById('unified-request-schedule-container').style.display = 'none';
+            } else {
+                document.getElementById('unified-btn-req-sch').classList.add('selected');
+                document.getElementById('unified-request-schedule-container').style.display = 'block';
+            }
+        }
+        
+        function checkUnifiedQuickCodes() {
+            // نفس منطق checkQuickCodes
+        }
+        
+        async function submitUnifiedRequest() {
+            const numEl = document.getElementById('unified-inpRoomNum-req');
+            const detailsEl = document.getElementById('unified-inpRequestDetails');
+            
+            if (!numEl || !detailsEl) {
+                showMiniAlert('⚠️ خطأ في تحميل النموذج', 'error');
+                return;
+            }
+            
+            const num = numEl.value;
+            const details = detailsEl.value;
+            
+            if (!num || !details) {
+                showMiniAlert('⚠️ أدخل رقم الغرفة وتفاصيل الطلب', 'warning');
+                return;
+            }
+            
+            if (unifiedIsImmediateRequest === null) {
+                showMiniAlert('⚠️ اختر نوع الطلب (فوري/مجدول)', 'warning');
+                return;
+            }
+            
+            // ✅ حساب schedTimestamp إذا كان مجدول
+            let schedTimestamp = null;
+            let fullTimeString = "🚨 فوري";
+            
+            if (!unifiedIsImmediateRequest) {
+                const dateInput = document.getElementById('unified-systemDateInputReq');
+                const timeInput = document.getElementById('unified-systemTimeInputReq');
                 
-                // فتح النافذة أولاً
-                const modal = document.getElementById('addRoomModal');
-                if (!modal) return;
+                if (!dateInput || !timeInput) {
+                    showMiniAlert('⚠️ أدخل التاريخ والوقت', 'warning');
+                    return;
+                }
                 
-                modal.style.display = 'flex';
+                const dateStr = dateInput.value;
+                const timeStr = timeInput.value;
                 
-                // إظهار مؤشر التحميل
-                showLoadingBar();
+                if (!dateStr || !timeStr) {
+                    showMiniAlert('⚠️ أدخل التاريخ والوقت', 'warning');
+                    return;
+                }
                 
-                // ===== إعادة تعيين جميع الحقول بشكل كامل =====
-                // إعادة تعيين رقم الغرفة
-                const inpRoomNum = document.getElementById('inpRoomNum');
-                if (inpRoomNum) inpRoomNum.value = ''; 
+                const [year, month, day] = dateStr.split('-').map(Number);
+                const [hours, minutes] = timeStr.split(':').map(Number);
                 
-                // إعادة تعيين تنبيه التكرار
-                const dupAlert = document.getElementById('room-dup-alert');
-                if (dupAlert) dupAlert.style.display = 'none'; 
+                const scheduledDate = new Date(year, month - 1, day, hours, minutes, 0, 0);
+                const now = new Date();
                 
-                // إعادة تعيين نوع الغرفة
-                const inpRoomType = document.getElementById('inpRoomType');
-                if (inpRoomType) inpRoomType.value = ''; 
+                if (scheduledDate < new Date(now.getTime() - 60000)) {
+                    showMiniAlert("⚠️ الوقت المجدول في الماضي!", "warning");
+                    return;
+                }
                 
-                // مسح selected من جميع أزرار الاختيار
-                document.querySelectorAll('.modal-select-btn').forEach(btn => {
+                schedTimestamp = scheduledDate.getTime();
+                fullTimeString = scheduledDate.toLocaleString('ar-EG', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            }
+            
+            // ✅ إغلاق النافذة الموحدة
+            closeUnifiedAddModal();
+            
+            // ✅ إرسال الطلب مباشرة بدون فتح النافذة القديمة
+            hapticFeedback('medium');
+            
+            // ✅ استخدام submitNewEntryToFirebase مباشرة
+            await submitNewEntryToFirebase('request', num, !unifiedIsImmediateRequest, schedTimestamp, fullTimeString, null, false, null, details, null, null, null, unifiedIsImmediateRequest);
+            
+            // ✅ إضافة النقاط
+            addPoints(5, 'إضافة طلب');
+        }
+        
+        // صيانة
+        let unifiedIsImmediateMaint = null;
+        
+        function setUnifiedMaintMode(mode) {
+            unifiedIsImmediateMaint = (mode === 'immediate');
+            hapticFeedback('medium');
+            document.querySelectorAll('#unified-btn-maint-imm, #unified-btn-maint-sch').forEach(btn => {
                     btn.classList.remove('selected');
                 });
+            if (unifiedIsImmediateMaint) {
+                document.getElementById('unified-btn-maint-imm').classList.add('selected');
+                document.getElementById('unified-maint-schedule-container').style.display = 'none';
+            } else {
+                document.getElementById('unified-btn-maint-sch').classList.add('selected');
+                document.getElementById('unified-maint-schedule-container').style.display = 'block';
+            }
+        }
+        
+        async function submitUnifiedMaintenance() {
+            const numEl = document.getElementById('unified-inpRoomNum-maint');
+            const detailsEl = document.getElementById('unified-inpMaintDetails');
+            const imageInput = document.getElementById('unified-inpMaintImage');
+            
+            if (!numEl || !detailsEl) {
+                showMiniAlert('⚠️ خطأ في تحميل النموذج', 'error');
+                return;
+            }
+            
+            const num = numEl.value;
+            const details = detailsEl.value;
+            const maintFile = imageInput && imageInput.files[0] ? imageInput.files[0] : null;
+            
+            if (!num || !details) {
+                showMiniAlert('⚠️ أدخل رقم الغرفة ووصف المشكلة', 'warning');
+                return;
+            }
+            
+            if (unifiedIsImmediateMaint === null) {
+                showMiniAlert('⚠️ اختر نوع الصيانة (عاجل/مجدول)', 'warning');
+                return;
+            }
+            
+            // ✅ حساب schedTimestamp إذا كان مجدول
+            let schedTimestamp = null;
+            let fullTimeString = "🚨 عاجل";
+            
+            if (!unifiedIsImmediateMaint) {
+                const dateInput = document.getElementById('unified-systemDateInputMaint');
+                const timeInput = document.getElementById('unified-systemTimeInputMaint');
                 
-                // إعادة تعيين Super Turbo
-                const inpSuperTurbo = document.getElementById('inpSuperTurbo');
-                if (inpSuperTurbo) inpSuperTurbo.checked = false; 
-                
-                // إعادة تعيين تفاصيل الطلب
-                const inpRequestDetails = document.getElementById('inpRequestDetails');
-                if (inpRequestDetails) inpRequestDetails.value = ''; 
-                
-                // إعادة تعيين تفاصيل الصيانة
-                const inpMaintDetails = document.getElementById('inpMaintDetails');
-                if (inpMaintDetails) inpMaintDetails.value = ''; 
-                
-                // إعادة تعيين صورة الصيانة
-                const maintImage = document.getElementById('inpMaintImage');
-                if (maintImage) maintImage.value = '';
-                
-                // مسح حالة الصورة المرفوعة
-                const maintImageLabel = document.querySelector('.maint-image-upload');
-                if (maintImageLabel) {
-                    maintImageLabel.classList.remove('uploaded');
-                    const uploadText = document.getElementById('click-to-upload-text');
-                    if (uploadText) uploadText.textContent = 'اضغط لرفع صورة';
+                if (!dateInput || !timeInput) {
+                    showMiniAlert('⚠️ أدخل التاريخ والوقت', 'warning');
+                    return;
                 }
                 
-                // إعادة تعيين حالة النزيل
-                const inpGuestStatus = document.getElementById('inpGuestStatus');
-                if (inpGuestStatus) inpGuestStatus.value = 'in';
+                const dateStr = dateInput.value;
+                const timeStr = timeInput.value;
                 
-                // إعادة تعيين أزرار حالة النزيل
-                const gstIn = document.getElementById('gst_clean_in');
-                const gstOut = document.getElementById('gst_clean_out');
-                if (gstIn) {
-                    gstIn.classList.remove('active', 'selected');
-                }
-                if (gstOut) {
-                    gstOut.classList.remove('active', 'selected');
+                if (!dateStr || !timeStr) {
+                    showMiniAlert('⚠️ أدخل التاريخ والوقت', 'warning');
+                    return;
                 }
                 
-                // إعادة تعيين جميع حقول التاريخ والوقت
-                const systemTimeInput = document.getElementById('systemTimeInput');
-                if (systemTimeInput) systemTimeInput.value = '12:00';
+                const [year, month, day] = dateStr.split('-').map(Number);
+                const [hours, minutes] = timeStr.split(':').map(Number);
                 
-                const systemDateInputReq = document.getElementById('systemDateInputReq');
-                if (systemDateInputReq) systemDateInputReq.value = '';
+                const scheduledDate = new Date(year, month - 1, day, hours, minutes, 0, 0);
+                const now = new Date();
                 
-                const systemTimeInputReq = document.getElementById('systemTimeInputReq');
-                if (systemTimeInputReq) systemTimeInputReq.value = '12:00';
-                
-                const systemDateInputMaint = document.getElementById('systemDateInputMaint');
-                if (systemDateInputMaint) systemDateInputMaint.value = '';
-                
-                const systemTimeInputMaint = document.getElementById('systemTimeInputMaint');
-                if (systemTimeInputMaint) systemTimeInputMaint.value = '12:00';
-                
-                // إخفاء اقتراحات الرموز السريعة
-                const quickCodesSuggestions = document.getElementById('quick-codes-suggestions');
-                if (quickCodesSuggestions) {
-                    quickCodesSuggestions.style.display = 'none';
-                    quickCodesSuggestions.innerHTML = '';
+                if (scheduledDate < new Date(now.getTime() - 60000)) {
+                    showMiniAlert("⚠️ الوقت المجدول في الماضي!", "warning");
+                    return;
                 }
                 
-                // تعيين الحد الأدنى للتاريخ والوقت
-                setMinDateTime();
+                schedTimestamp = scheduledDate.getTime();
+                fullTimeString = scheduledDate.toLocaleString('ar-EG', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            }
+            
+            // ✅ إغلاق النافذة الموحدة
+            closeUnifiedAddModal();
+            
+            // ✅ إرسال الطلب مباشرة بدون فتح النافذة القديمة
+            hapticFeedback('medium');
+            
+            // ✅ استخدام submitNewEntryToFirebase مباشرة
+            await submitNewEntryToFirebase('maintenance', num, !unifiedIsImmediateMaint, schedTimestamp, fullTimeString, null, false, details, null, maintFile, null, unifiedIsImmediateMaint, null);
+            
+            // ✅ إضافة النقاط
+            addPoints(5, 'إضافة صيانة');
+        }
+        
+        // فحص الغرفة
+        function switchUnifiedInspectionMode(mode) {
+            hapticFeedback('light');
+            document.querySelectorAll('#unified-btn-supervisor-inspection, #unified-btn-reception-inspection').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (mode === 'supervisor') {
+                document.getElementById('unified-btn-supervisor-inspection').classList.add('active');
+                document.getElementById('unified-supervisor-inspection-section').style.display = 'block';
+                document.getElementById('unified-reception-inspection-section').style.display = 'none';
+            } else {
+                document.getElementById('unified-btn-reception-inspection').classList.add('active');
+                document.getElementById('unified-supervisor-inspection-section').style.display = 'none';
+                document.getElementById('unified-reception-inspection-section').style.display = 'block';
                 
-                // تغيير الوضع مباشرة - كل نوع يفتح على الوضع المناسب له
-                setTimeout(() => {
-                    switchAddMode(mode);
+                // ✅ تحميل وعرض الميني بار عند فتح وضع الاستقبال
+                MinibarManager.loadMinibar().then(() => {
+                    MinibarManager.renderInspectionModal();
+                }).catch(e => {
+                    console.error('Error loading minibar:', e);
+                });
+            }
+        }
+        
+        function setUnifiedSupervisorUrgency(urgency) {
+            hapticFeedback('light');
+            document.querySelectorAll('#unified-supervisor-urgent-btn, #unified-supervisor-normal-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (urgency === 'urgent') {
+                document.getElementById('unified-supervisor-urgent-btn').classList.add('active');
+            } else {
+                document.getElementById('unified-supervisor-normal-btn').classList.add('active');
+            }
+        }
+        
+        function setUnifiedSupervisorGuestStatus(status) {
+            hapticFeedback('light');
+            document.querySelectorAll('#unified-supervisor-guest-inside-btn, #unified-supervisor-guest-outside-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            if (status === 'inside') {
+                document.getElementById('unified-supervisor-guest-inside-btn').classList.add('active');
+            } else {
+                document.getElementById('unified-supervisor-guest-outside-btn').classList.add('active');
+            }
+        }
+        
+        function switchUnifiedInspectionTab(tab) {
+            hapticFeedback('light');
+            document.querySelectorAll('#unified-tab-minibar, #unified-tab-damages, #unified-tab-lostfound, #unified-tab-excellent').forEach(t => {
+                t.classList.remove('active');
+            });
+            document.querySelectorAll('#unified-inspection-minibar, #unified-inspection-damages, #unified-inspection-lostfound, #unified-inspection-excellent').forEach(c => {
+                c.style.display = 'none';
+            });
+            const tabBtn = document.getElementById(`unified-tab-${tab}`);
+            const tabContent = document.getElementById(`unified-inspection-${tab}`);
+            if (tabBtn) tabBtn.classList.add('active');
+            if (tabContent) tabContent.style.display = 'block';
+            
+            // ✅ تحميل وعرض الميني بار عند فتح تبويب الميني بار
+            if (tab === 'minibar') {
+                MinibarManager.loadMinibar().then(() => {
+                    MinibarManager.renderInspectionModal();
+                }).catch(e => {
+                    console.error('Error loading minibar:', e);
+                });
+            }
+        }
+        
+        async function submitUnifiedSupervisorInspection() {
+            const roomNum = document.getElementById('unified-inspection-room-num').value;
+            if (!roomNum) {
+                showMiniAlert('⚠️ أدخل رقم الغرفة', 'warning');
+                return;
+            }
+            
+            const urgentBtn = document.getElementById('unified-supervisor-urgent-btn');
+            const normalBtn = document.getElementById('unified-supervisor-normal-btn');
+            const insideBtn = document.getElementById('unified-supervisor-guest-inside-btn');
+            const outsideBtn = document.getElementById('unified-supervisor-guest-outside-btn');
+            
+            const isUrgent = urgentBtn && urgentBtn.classList.contains('active');
+            const guestInside = insideBtn && insideBtn.classList.contains('active');
+            
+            if (!isUrgent && (!normalBtn || !normalBtn.classList.contains('active'))) {
+                showMiniAlert('⚠️ اختر حالة الطلب (عاجل/غير عاجل)', 'warning');
+                return;
+            }
+            if (!guestInside && (!outsideBtn || !outsideBtn.classList.contains('active'))) {
+                showMiniAlert('⚠️ اختر حالة النزيل (داخل/خارج)', 'warning');
+                return;
+            }
+            
+            if (!db) {
+                showMiniAlert('❌ غير متصل بقاعدة البيانات', 'error');
+                return;
+            }
+            
+            try {
+                const guestStatusText = guestInside ? 'داخل' : 'خارج';
+                const urgencyText = isUrgent ? 'عاجل' : 'غير عاجل';
+                
+                await db.collection('inspectionCards').doc().set({
+                    roomNum: parseInt(roomNum),
+                    type: 'supervisor',
+                    urgency: isUrgent ? 'urgent' : 'normal',
+                    urgencyText: urgencyText,
+                    guestStatus: guestInside ? 'inside' : 'outside',
+                    guestStatusText: guestStatusText,
+                    branch: 'default',
+                    timestamp: Date.now(),
+                    fromReception: true // ✅ هذا من "👔 إرسال للمشرف" (من الاستقبال)
+                });
+                
+                // إظهار التنبيه
+                showInspectionAlert('supervisor', roomNum);
+                
+                closeUnifiedAddModal();
+                showMiniAlert('✅ تم إرسال الطلب للمشرف بنجاح', 'success');
+            } catch(e) {
+                console.error('Error submitting supervisor inspection:', e);
+                showMiniAlert('❌ فشل الإرسال', 'error');
+            }
+        }
+        
+        async function submitUnifiedInspection(type) {
+            const roomNum = document.getElementById('unified-inspection-room-num').value;
+            if (!roomNum) {
+                showMiniAlert('⚠️ أدخل رقم الغرفة', 'warning');
+                return;
+            }
+            
+            if (!db) {
+                showMiniAlert('❌ غير متصل بقاعدة البيانات', 'error');
+                return;
+            }
+            
+            try {
+                let data = {
+                    roomNum: parseInt(roomNum),
+                    type: type,
+                    branch: 'default',
+                    timestamp: Date.now()
+                };
+                
+                let selectedItems = [];
+                let imageUrl = null;
+                
+                if (type === 'minibar') {
+                    selectedItems = Array.from(document.querySelectorAll('#unified-minibar-items-dynamic input:checked')).map(cb => {
+                        const label = cb.closest('label');
+                        return label ? label.textContent.trim() : cb.value;
+                    });
                     
-                    // مسح جميع الأزرار لتكون في وضع محايد
-                    if (mode === 'request') {
-                        // إزالة selected من أزرار الطلبات
-                        const btnReqImm = document.getElementById('btn-req-imm');
-                        const btnReqSch = document.getElementById('btn-req-sch');
-                        if (btnReqImm) btnReqImm.classList.remove('selected');
-                        if (btnReqSch) btnReqSch.classList.remove('selected');
-                        // إخفاء حاوية الجدولة
-                        const reqScheduleContainer = document.getElementById('request-schedule-container');
-                        if (reqScheduleContainer) reqScheduleContainer.style.display = 'none';
-                        // إعادة تعيين المتغير
-                        isImmediateRequest = null;
-                    } else if (mode === 'maintenance') {
-                        // إزالة selected من أزرار الصيانة
-                        const btnMaintImm = document.getElementById('btn-maint-imm');
-                        const btnMaintSch = document.getElementById('btn-maint-sch');
-                        if (btnMaintImm) btnMaintImm.classList.remove('selected');
-                        if (btnMaintSch) btnMaintSch.classList.remove('selected');
-                        // إخفاء حاوية الجدولة
-                        const maintScheduleContainer = document.getElementById('maint-schedule-container');
-                        if (maintScheduleContainer) maintScheduleContainer.style.display = 'none';
-                        // إعادة تعيين المتغير
-                        isImmediateMaint = null;
-                    } else if (mode === 'cleaning') {
-                        // إزالة selected من أزرار التنظيف
-                        const optOut = document.getElementById('opt_out');
-                        const optStay = document.getElementById('opt_stay');
-                        const optDnd = document.getElementById('opt_dnd');
-                        if (optOut) optOut.classList.remove('selected');
-                        if (optStay) optStay.classList.remove('selected');
-                        if (optDnd) optDnd.classList.remove('selected');
-                        // إخفاء خيارات الساكن
-                        const stayOptions = document.getElementById('stayOptionsCleaning');
-                        if (stayOptions) stayOptions.style.display = 'none';
+                    if (selectedItems.length === 0) {
+                        showMiniAlert('⚠️ اختر عنصر واحد على الأقل', 'warning');
+                        return;
                     }
                     
-                    // التمرير التلقائي إلى القسم المناسب بعد فتح النافذة
-                    setTimeout(() => {
-                        let sectionId = '';
-                        if (mode === 'cleaning') {
-                            // التمرير إلى قسم الغرف
-                            const roomsSection = document.querySelector('.section-rooms');
-                            if (roomsSection) {
-                                roomsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }
-                        } else if (mode === 'request') {
-                            // التمرير إلى قسم الطلبات
-                            scrollToSection('guest-requests-section');
-                        } else if (mode === 'maintenance') {
-                            // التمرير إلى قسم الصيانة
-                            scrollToSection('maintenance-section');
-                        }
-                    }, 100);
-                }, 50);
+                    data.items = selectedItems;
+                } else if (type === 'damages') {
+                    const photoInput = document.getElementById('unified-damage-photo');
+                    if (photoInput && photoInput.files[0]) {
+                        const file = photoInput.files[0];
+                        const storageRef = storage.ref(`inspections/damages/${Date.now()}_${file.name}`);
+                        await storageRef.put(file);
+                        imageUrl = await storageRef.getDownloadURL();
+                        data.imageUrl = imageUrl;
+                    } else {
+                        showMiniAlert('⚠️ يجب رفع صورة الأضرار', 'warning');
+                        return;
+                    }
+                } else if (type === 'lostfound') {
+                    const photoInput = document.getElementById('unified-lostfound-photo');
+                    if (photoInput && photoInput.files[0]) {
+                        const file = photoInput.files[0];
+                        const storageRef = storage.ref(`inspections/lostfound/${Date.now()}_${file.name}`);
+                        await storageRef.put(file);
+                        imageUrl = await storageRef.getDownloadURL();
+                        data.imageUrl = imageUrl;
+                    } else {
+                        showMiniAlert('⚠️ يجب رفع صورة المفقودات', 'warning');
+                        return;
+                    }
+                }
                 
-                // إخفاء مؤشر التحميل بعد 3 ثواني
-                setTimeout(() => {
-                    hideLoadingBar();
-                }, 3000);
+                await db.collection('inspectionCards').doc().set(data);
+                
+                // إظهار التنبيه
+                showInspectionAlert(type, roomNum);
+                
+                closeUnifiedAddModal();
+                showMiniAlert('✅ تم إرسال التقرير للاستقبال بنجاح', 'success');
+            } catch(e) {
+                console.error('Error submitting inspection:', e);
+                showMiniAlert('❌ فشل الإرسال', 'error');
             }
-            hapticFeedback('medium');
         }
+        
+        // تصدير الدوال للاستخدام في HTML
+        window.setUnifiedRoomType = setUnifiedRoomType;
+        window.setUnifiedGuestStatus = setUnifiedGuestStatus;
+        window.checkUnifiedDuplicate = checkUnifiedDuplicate;
+        window.suggestUnifiedRoomType = suggestUnifiedRoomType;
+        window.submitUnifiedCleaning = submitUnifiedCleaning;
+        window.setUnifiedRequestMode = setUnifiedRequestMode;
+        window.checkUnifiedQuickCodes = checkUnifiedQuickCodes;
+        window.submitUnifiedRequest = submitUnifiedRequest;
+        window.setUnifiedMaintMode = setUnifiedMaintMode;
+        window.submitUnifiedMaintenance = submitUnifiedMaintenance;
+        window.switchUnifiedInspectionMode = switchUnifiedInspectionMode;
+        window.setUnifiedSupervisorUrgency = setUnifiedSupervisorUrgency;
+        window.setUnifiedSupervisorGuestStatus = setUnifiedSupervisorGuestStatus;
+        window.switchUnifiedInspectionTab = switchUnifiedInspectionTab;
+        window.submitUnifiedSupervisorInspection = submitUnifiedSupervisorInspection;
+        window.submitUnifiedInspection = submitUnifiedInspection;
         
         // ===============================================
         // == Inspection Modal Functions ================
@@ -7041,6 +8379,15 @@ function renderMaintenanceCards() {
             if (tabBtn) tabBtn.classList.add('active');
             if (tabContent) tabContent.style.display = 'block';
             hapticFeedback('light');
+            
+            // ✅ تحميل وعرض الميني بار عند فتح تبويب الميني بار
+            if (tab === 'minibar') {
+                MinibarManager.loadMinibar().then(() => {
+                    MinibarManager.renderInspectionModal();
+                }).catch(e => {
+                    console.error('Error loading minibar:', e);
+                });
+            }
             
             // إظهار شريط التنبيه عند اختيار تبويب
             showInspectionAlert(tab);
@@ -7412,7 +8759,8 @@ function renderMaintenanceCards() {
                     guestStatus: guestInside ? 'inside' : 'outside',
                     guestStatusText: guestStatusText,
                     branch: 'default',
-                    timestamp: Date.now()
+                    timestamp: Date.now(),
+                    fromReception: false // ✅ هذا من مكان آخر (ليس من الاستقبال)
                 });
                 
                 // إظهار شريط التنبيه فوراً قبل إغلاق النافذة
@@ -7991,40 +9339,90 @@ function renderMaintenanceCards() {
             items: [],
             
             async loadMinibar() {
+                this.items = []; // إعادة تعيين القائمة
+                
                 // محاولة التحميل من menu_items الجديد أولاً
                 try {
                     if (db) {
                         const hotelId = HOTEL_CONFIG.hotelId || 'default';
-                        const snapshot = await db.collection('hotel_settings').doc(hotelId).collection('menu_items')
+                        
+                        // ✅ محاولة 1: البحث عن isMiniBar == true
+                        let snapshot = await db.collection('hotel_settings').doc(hotelId).collection('menu_items')
                             .where('isMiniBar', '==', true)
                             .get();
                         
                         if (!snapshot.empty) {
-                            this.items = snapshot.docs.map(doc => doc.data());
-                            return; // نجح التحميل من menu_items
+                            this.items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            console.log(`✅ تم تحميل ${this.items.length} عنصر ميني بار من Firebase (isMiniBar)`);
+                            return;
+                        }
+                        
+                        // ✅ محاولة 2: البحث عن type == 'minibar'
+                        snapshot = await db.collection('hotel_settings').doc(hotelId).collection('menu_items')
+                            .where('type', '==', 'minibar')
+                            .get();
+                        
+                        if (!snapshot.empty) {
+                            this.items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            console.log(`✅ تم تحميل ${this.items.length} عنصر ميني بار من Firebase (type)`);
+                            return;
+                        }
+                        
+                        // ✅ محاولة 3: جلب كل menu_items والفلترة محلياً
+                        snapshot = await db.collection('hotel_settings').doc(hotelId).collection('menu_items').get();
+                        if (!snapshot.empty) {
+                            const allItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            this.items = allItems.filter(item => 
+                                item.isMiniBar === true || 
+                                item.isMiniBar === 'true' ||
+                                item.type === 'minibar' ||
+                                (item.category && item.category.toLowerCase() === 'minibar')
+                            );
+                            if (this.items.length > 0) {
+                                console.log(`✅ تم تحميل ${this.items.length} عنصر ميني بار من Firebase (filtered)`);
+                                return;
+                            }
                         }
                     }
                 } catch(e) {
-                    console.error('Error loading minibar from menu_items:', e);
+                    console.error('❌ Error loading minibar from menu_items:', e);
                 }
                 
                 // Fallback إلى النظام القديم
-                if (db) {
+                if (db && this.items.length === 0) {
                 try {
                     const snapshot = await db.collection('minibarItems').where('branch', '==', 'default').get();
                     this.items = [];
                     snapshot.forEach(doc => {
                         this.items.push({ id: doc.id, ...doc.data() });
                     });
+                        if (this.items.length > 0) {
+                            console.log(`✅ تم تحميل ${this.items.length} عنصر ميني بار من النظام القديم`);
+                            return;
+                        }
                 } catch(e) {
-                        console.error('Error loading minibar from old system:', e);
+                        console.error('❌ Error loading minibar from old system:', e);
                     }
                 }
                 
                 // Fallback أخير إلى localStorage
                 if (this.items.length === 0) {
+                    try {
                     const allMenuItems = JSON.parse(localStorage.getItem('menu_items') || '[]');
-                    this.items = allMenuItems.filter(item => item.isMiniBar === true);
+                        this.items = allMenuItems.filter(item => 
+                            item.isMiniBar === true || 
+                            item.isMiniBar === 'true' ||
+                            item.type === 'minibar' ||
+                            (item.category && item.category.toLowerCase() === 'minibar')
+                        );
+                        if (this.items.length > 0) {
+                            console.log(`✅ تم تحميل ${this.items.length} عنصر ميني بار من localStorage`);
+                        } else {
+                            console.warn('⚠️ لا توجد عناصر ميني بار في أي مصدر');
+                        }
+                    } catch(e) {
+                        console.error('❌ Error loading minibar from localStorage:', e);
+                    }
                 }
             },
             
@@ -8035,22 +9433,28 @@ function renderMaintenanceCards() {
             },
             
             renderInspectionModal() {
+                // ✅ عرض في كلا الحاويتين (القديمة والجديدة)
                 const container = document.getElementById('minibar-items-dynamic');
-                if (!container) return;
+                const unifiedContainer = document.getElementById('unified-minibar-items-dynamic');
                 
                 if (this.items.length === 0) {
-                    container.innerHTML = '<p style="text-align:center; color:var(--text-sec); padding:20px;">لا توجد عناصر في الميني بار<br><small>استخدم "📋 محرر قائمة الخدمات" لإضافة عناصر</small></p>';
+                    const emptyMsg = '<p style="text-align:center; color:var(--text-sec); padding:20px; background:rgba(245,158,11,0.05); border-radius:12px; border:2px dashed rgba(245,158,11,0.3);"><div style="font-size:2rem; margin-bottom:8px;">📦</div>لا توجد عناصر في الميني بار<br><small style="font-size:0.85rem;">استخدم "📋 محرر قائمة الخدمات" لإضافة عناصر</small></p>';
+                    if (container) container.innerHTML = emptyMsg;
+                    if (unifiedContainer) unifiedContainer.innerHTML = emptyMsg;
                     return;
                 }
                 
-                container.innerHTML = this.items.map(item => `
-                    <label class="minibar-item-checkbox" style="display:flex; align-items:center; gap:10px; padding:12px; margin-bottom:8px; background:#f8fafc; border-radius:8px; cursor:pointer; border:1px solid var(--border-color);">
-                        <input type="checkbox" value="${item.name}" style="width:20px; height:20px; cursor:pointer;">
-                        <span style="font-size:1.2rem;">${item.icon || '🍫'}</span>
-                        <span style="font-weight:700; flex:1;">${item.name}</span>
-                        ${item.price && item.price !== '0' ? `<span style="color:var(--text-sec); font-size:0.9rem;">${item.price} ريال</span>` : ''}
+                const itemsHTML = this.items.map(item => `
+                    <label class="minibar-item-checkbox" style="display:flex; align-items:center; gap:12px; padding:14px; margin-bottom:10px; background:linear-gradient(135deg, rgba(255,255,255,0.9), rgba(248,250,252,0.95)); border-radius:12px; cursor:pointer; border:2px solid var(--border-color); transition:all 0.3s; box-shadow:0 2px 6px rgba(0,0,0,0.05);" onmouseover="this.style.borderColor='var(--primary)'; this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(59,130,246,0.2)';" onmouseout="this.style.borderColor='var(--border-color)'; this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 6px rgba(0,0,0,0.05)';">
+                        <input type="checkbox" value="${item.name}" style="width:22px; height:22px; cursor:pointer; accent-color:var(--primary);">
+                        <span style="font-size:1.4rem;">${item.icon || '🍫'}</span>
+                        <span style="font-weight:800; flex:1; font-size:1rem; color:var(--text-main);">${item.name}</span>
+                        ${item.price && item.price !== '0' ? `<span style="color:var(--primary); font-size:0.95rem; font-weight:700; background:rgba(59,130,246,0.1); padding:4px 10px; border-radius:8px;">${item.price} ريال</span>` : ''}
                     </label>
                 `).join('');
+                
+                if (container) container.innerHTML = itemsHTML;
+                if (unifiedContainer) unifiedContainer.innerHTML = itemsHTML;
             }
         };
         
@@ -8058,17 +9462,52 @@ function renderMaintenanceCards() {
         // == Maintenance Scheduler ====================
         // ===============================================
         
-        function showMaintenanceScheduler() {
+        // ✅ تعريف الدوال في window فوراً
+        window.showMaintenanceScheduler = function() {
+            if (typeof toggleSideMenu === 'function') {
             toggleSideMenu();
-            verifyAdminPIN(() => {
-                loadScheduledMaintenance();
-                document.getElementById('maintenance-scheduler-modal').style.display = 'flex';
-            });
-        }
-        
-        function closeMaintenanceScheduler() {
+            }
             const modal = document.getElementById('maintenance-scheduler-modal');
-            if (modal) modal.style.display = 'none';
+            if (modal) {
+                modal.style.display = 'flex';
+                // تعيين الحد الأدنى للتاريخ
+                const dateInput = document.getElementById('scheduler-specific-date-input');
+                if (dateInput) {
+                    const today = new Date().toISOString().split('T')[0];
+                    dateInput.min = today;
+                }
+                loadScheduledMaintenance();
+            } else {
+                console.error('maintenance-scheduler-modal not found');
+        }
+        };
+        
+        window.closeMaintenanceScheduler = function() {
+            const modal = document.getElementById('maintenance-scheduler-modal');
+            if (modal) {
+                modal.style.display = 'none';
+            }
+        };
+        
+        function handleSchedulerFrequencyChange() {
+            const freqSelect = document.getElementById('scheduler-frequency');
+            const customDaysDiv = document.getElementById('scheduler-custom-days');
+            const specificDateDiv = document.getElementById('scheduler-specific-date');
+            
+            if (!freqSelect) return;
+            
+            const frequency = freqSelect.value;
+            
+            if (frequency === 'custom') {
+                if (customDaysDiv) customDaysDiv.style.display = 'block';
+                if (specificDateDiv) specificDateDiv.style.display = 'none';
+            } else if (frequency === 'specific') {
+                if (customDaysDiv) customDaysDiv.style.display = 'none';
+                if (specificDateDiv) specificDateDiv.style.display = 'block';
+            } else {
+                if (customDaysDiv) customDaysDiv.style.display = 'none';
+                if (specificDateDiv) specificDateDiv.style.display = 'none';
+            }
         }
         
         async function loadScheduledMaintenance() {
@@ -8092,33 +9531,67 @@ function renderMaintenanceCards() {
             if (!list) return;
             
             if (scheduled.length === 0) {
-                list.innerHTML = '<p style="text-align: center; color: var(--text-sec); padding: 20px;">لا توجد مهام مجدولة</p>';
+                list.innerHTML = '<div style="text-align: center; color: var(--text-sec); padding: 40px 20px; background: rgba(14,165,233,0.05); border-radius: 12px; border: 2px dashed rgba(14,165,233,0.2);"><div style="font-size: 3rem; margin-bottom: 10px;">📅</div><p style="font-size: 0.95rem; font-weight: 600;">لا توجد مهام مجدولة</p><p style="font-size: 0.85rem; margin-top: 5px;">أضف مهمة جديدة من الأعلى</p></div>';
                 return;
             }
             
             list.innerHTML = scheduled.map(item => {
                 const freqText = {
-                    daily: 'يومي',
-                    weekly: 'أسبوعي',
-                    monthly: 'شهري',
-                    custom: `كل ${item.customDays || 0} أيام`
+                    daily: '📅 يومي',
+                    weekly: '📅 أسبوعي',
+                    monthly: '📅 شهري',
+                    specific: '📅 حسب التاريخ المحدد',
+                    custom: `🔄 كل ${item.customDays || 0} أيام`
                 }[item.frequency] || item.frequency;
                 
+                // عرض العناصر المتعددة
+                let itemsHtml = '';
+                if (item.items && item.items.length > 0) {
+                    itemsHtml = '<div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(14,165,233,0.2);">';
+                    item.items.forEach((it, idx) => {
+                        itemsHtml += `<div style="font-size: 0.8rem; color: var(--text-sec); margin-bottom: 4px; padding-right: 12px;">${idx + 1}. ${it.text}</div>`;
+                    });
+                    itemsHtml += '</div>';
+                } else {
+                    itemsHtml = `<div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 6px;">${item.description}</div>`;
+                }
+                
+                // حساب الموعد القادم
+                let nextDateText = '';
+                if (item.nextScheduledTime) {
+                    const nextDate = new Date(item.nextScheduledTime);
+                    const now = Date.now();
+                    if (nextDate > now) {
+                        const daysUntil = Math.ceil((nextDate - now) / (24 * 60 * 60 * 1000));
+                        nextDateText = `<div style="font-size: 0.75rem; color: var(--maint-color); margin-top: 4px; font-weight: 600;">⏰ ستظهر بعد ${daysUntil} ${daysUntil === 1 ? 'يوم' : 'أيام'}</div>`;
+                    } else {
+                        nextDateText = `<div style="font-size: 0.75rem; color: var(--success); margin-top: 4px; font-weight: 600;">✅ جاهزة للظهور الآن</div>`;
+                    }
+                }
+                
                 return `
-                    <div style="display: flex; align-items: center; justify-content: space-between; 
-                                padding: 12px; margin-bottom: 8px; background: white; 
-                                border-radius: 8px; border: 1px solid var(--border-color);">
+                    <div style="background: linear-gradient(135deg, rgba(255,255,255,0.95), rgba(248,250,252,0.95)); padding: 16px; margin-bottom: 12px; border-radius: 12px; border: 2px solid rgba(14,165,233,0.2); box-shadow: 0 2px 8px rgba(14,165,233,0.1);">
+                        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;">
                         <div style="flex: 1;">
-                            <div style="font-weight: 700; font-size: 0.9rem;">غرفة ${item.roomNum}</div>
-                            <div style="font-size: 0.8rem; color: var(--text-sec);">${item.description}</div>
-                            <div style="font-size: 0.75rem; color: var(--text-sec); margin-top: 4px;">
-                                ${freqText} - ${item.time || '09:00'}
+                                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                    <div style="width: 40px; height: 40px; background: linear-gradient(135deg, var(--maint-color), #0EA5E9); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; font-weight: 800; color: white; box-shadow: 0 2px 6px rgba(14,165,233,0.3);">${item.roomNum}</div>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 800; font-size: 1rem; color: var(--text-main);">غرفة ${item.roomNum}</div>
+                                        <div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 2px;">${freqText} - ${item.time || '09:00'}</div>
                             </div>
+                                </div>
+                                ${itemsHtml}
+                                ${nextDateText}
                         </div>
                         <button onclick="deleteScheduledMaintenance('${item.id}')" 
-                                style="background: var(--danger); color: white; border: none; 
-                                       padding: 6px 12px; border-radius: 6px; cursor: pointer; 
-                                       font-size: 0.85rem;">🗑️</button>
+                                    style="background: linear-gradient(135deg, var(--danger), #DC2626); color: white; border: none; 
+                                           padding: 10px 14px; border-radius: 10px; cursor: pointer; 
+                                           font-size: 1rem; box-shadow: 0 2px 6px rgba(239,68,68,0.3); transition: all 0.3s;"
+                                    onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 10px rgba(239,68,68,0.4)';"
+                                    onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(239,68,68,0.3)';">
+                                🗑️
+                            </button>
+                        </div>
                     </div>
                 `;
             }).join('');
@@ -8135,12 +9608,14 @@ function renderMaintenanceCards() {
             const timeInput = document.getElementById('scheduler-time');
             const freqSelect = document.getElementById('scheduler-frequency');
             const customDaysInput = document.getElementById('scheduler-custom-days-input');
+            const specificDateInput = document.getElementById('scheduler-specific-date-input');
             
             const roomNum = roomNumInput ? roomNumInput.value : '';
             const description = descInput ? descInput.value.trim() : '';
             const time = timeInput ? timeInput.value : '09:00';
             const frequency = freqSelect ? freqSelect.value : 'daily';
             const customDays = frequency === 'custom' && customDaysInput ? parseInt(customDaysInput.value) : null;
+            const specificDate = frequency === 'specific' && specificDateInput ? specificDateInput.value : null;
             
             if (!roomNum || !description) {
                 showMiniAlert('⚠️ يرجى إدخال جميع البيانات', 'warning');
@@ -8152,22 +9627,69 @@ function renderMaintenanceCards() {
                 return;
             }
             
+            if (frequency === 'specific' && !specificDate) {
+                showMiniAlert('⚠️ يرجى اختيار التاريخ', 'warning');
+                return;
+            }
+            
             try {
+                // حساب الموعد المحدد (24 ساعة قبل الموعد)
+                let nextScheduledTime = null;
+                if (frequency === 'specific' && specificDate) {
+                    const [year, month, day] = specificDate.split('-').map(Number);
+                    const [hours, minutes] = time.split(':').map(Number);
+                    const scheduledDateTime = new Date(year, month - 1, day, hours, minutes);
+                    // الموعد الذي تظهر فيه الصيانة (24 ساعة قبل)
+                    nextScheduledTime = scheduledDateTime.getTime() - (24 * 60 * 60 * 1000);
+                } else {
+                    // للجدولة الدورية، نحسب الموعد القادم
+                    const now = new Date();
+                    const [hours, minutes] = time.split(':').map(Number);
+                    let nextDate = new Date();
+                    nextDate.setHours(hours, minutes, 0, 0);
+                    
+                    if (frequency === 'daily') {
+                        if (nextDate <= now) {
+                            nextDate.setDate(nextDate.getDate() + 1);
+                        }
+                    } else if (frequency === 'weekly') {
+                        const daysUntilNext = (7 - nextDate.getDay() + 1) % 7 || 7;
+                        nextDate.setDate(nextDate.getDate() + daysUntilNext);
+                    } else if (frequency === 'monthly') {
+                        nextDate.setMonth(nextDate.getMonth() + 1);
+                    } else if (frequency === 'custom' && customDays) {
+                        nextDate.setDate(nextDate.getDate() + customDays);
+                    }
+                    // الموعد الذي تظهر فيه الصيانة (24 ساعة قبل)
+                    nextScheduledTime = nextDate.getTime() - (24 * 60 * 60 * 1000);
+                }
+                
                 await db.collection('recurringMaintenance').doc().set({
                     roomNum: parseInt(roomNum),
                     description,
                     frequency,
                     time,
                     customDays,
+                    specificDate,
+                    nextScheduledTime, // ✅ الموعد الذي تظهر فيه الصيانة (24 ساعة قبل)
                     branch: 'default',
-                    createdAt: Date.now()
+                    createdAt: Date.now(),
+                    items: description.split('\n').filter(line => line.trim()).map((line, idx) => ({
+                        id: idx + 1,
+                        text: line.trim()
+                    })) // ✅ تقسيم الوصف إلى عناصر متعددة
                 });
                 
+                // مسح الحقول
                 if (roomNumInput) roomNumInput.value = '';
                 if (descInput) descInput.value = '';
                 if (timeInput) timeInput.value = '09:00';
-                if (freqSelect) freqSelect.value = 'daily';
+                if (freqSelect) {
+                    freqSelect.value = 'daily';
+                    handleSchedulerFrequencyChange();
+                }
                 if (customDaysInput) customDaysInput.value = '';
+                if (specificDateInput) specificDateInput.value = '';
                 
                 showMiniAlert('✅ تم إضافة المهمة المجدولة', 'success');
                 loadScheduledMaintenance();
@@ -8192,17 +9714,112 @@ function renderMaintenanceCards() {
             }
         }
         
-        // Handle frequency change
-        document.addEventListener('DOMContentLoaded', () => {
-            const freqSelect = document.getElementById('scheduler-frequency');
-            const customDaysDiv = document.getElementById('scheduler-custom-days');
-            if (freqSelect && customDaysDiv) {
-                freqSelect.addEventListener('change', function() {
-                    customDaysDiv.style.display = this.value === 'custom' ? 'block' : 'none';
-                });
-            }
+        // ✅ فحص الصيانة المجدولة وإظهارها قبل 24 ساعة
+        function checkAndCreateScheduledMaintenance() {
+            if (!db) return;
             
-            // Handle inspection photo uploads
+            db.collection('recurringMaintenance').where('branch', '==', 'default').get().then(snapshot => {
+                const now = Date.now();
+                snapshot.forEach(doc => {
+                    const item = { id: doc.id, ...doc.data() };
+                    
+                    // ✅ إذا حان موعد الظهور (24 ساعة قبل الموعد)
+                    if (item.nextScheduledTime && now >= item.nextScheduledTime) {
+                        // التحقق من عدم وجود صيانة نشطة لنفس الغرفة والوصف
+                        const existingMaint = appState.activeMaintenance.find(m => 
+                            m.num == item.roomNum && 
+                            m.maintDesc === item.description &&
+                            m.status !== 'completed'
+                        );
+                        
+                        if (!existingMaint) {
+                            // حساب الموعد الفعلي للصيانة (بعد 24 ساعة من nextScheduledTime)
+                            const actualScheduledTime = item.nextScheduledTime + (24 * 60 * 60 * 1000);
+                            const [hours, minutes] = item.time.split(':').map(Number);
+                            const scheduledDate = new Date(actualScheduledTime);
+                            scheduledDate.setHours(hours, minutes, 0, 0);
+                            
+                            // إنشاء صيانة مجدولة جديدة
+                            const newMaint = {
+                                num: item.roomNum,
+                                maintDesc: item.items && item.items.length > 0 
+                                    ? item.items.map(it => it.text).join('\n')
+                                    : item.description,
+                                schedTime: scheduledDate.toLocaleString('ar-EG', {
+                                    weekday: 'long',
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                }),
+                                schedTimestamp: scheduledDate.getTime(),
+                                startTime: Date.now(),
+                                status: 'scheduled',
+                                history: [{
+                                    action: 'صيانة مجدولة تلقائياً',
+                                    time: new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })
+                                }],
+                                type: 'maint',
+                                fromRecurring: true,
+                                recurringId: item.id
+                            };
+                            
+                            // إضافة إلى Firebase
+                            db.collection('activeMaintenance').doc().set(newMaint, { merge: true })
+                                .catch(err => console.error('Error creating scheduled maintenance:', err));
+                            
+                            // حساب الموعد القادم للصيانة الدورية
+                            let nextScheduledTime = null;
+                            if (item.frequency === 'daily') {
+                                nextScheduledTime = scheduledDate.getTime() + (24 * 60 * 60 * 1000) - (24 * 60 * 60 * 1000);
+                            } else if (item.frequency === 'weekly') {
+                                nextScheduledTime = scheduledDate.getTime() + (7 * 24 * 60 * 60 * 1000) - (24 * 60 * 60 * 1000);
+                            } else if (item.frequency === 'monthly') {
+                                const nextMonth = new Date(scheduledDate);
+                                nextMonth.setMonth(nextMonth.getMonth() + 1);
+                                nextScheduledTime = nextMonth.getTime() - (24 * 60 * 60 * 1000);
+                            } else if (item.frequency === 'custom' && item.customDays) {
+                                nextScheduledTime = scheduledDate.getTime() + (item.customDays * 24 * 60 * 60 * 1000) - (24 * 60 * 60 * 1000);
+                            } else if (item.frequency === 'specific') {
+                                // للصيانة حسب التاريخ المحدد، لا نحدث nextScheduledTime (لن تظهر مرة أخرى)
+                                nextScheduledTime = null;
+                            }
+                            
+                            // تحديث nextScheduledTime في recurringMaintenance
+                            if (nextScheduledTime) {
+                                db.collection('recurringMaintenance').doc(item.id).update({
+                                    nextScheduledTime: nextScheduledTime
+                                }).catch(err => console.error('Error updating nextScheduledTime:', err));
+                            } else if (item.frequency === 'specific') {
+                                // حذف الصيانة الدورية بعد تنفيذها (لأنها حسب تاريخ محدد)
+                                db.collection('recurringMaintenance').doc(item.id).delete()
+                                    .catch(err => console.error('Error deleting specific date maintenance:', err));
+                            }
+                        }
+                    }
+                });
+            }).catch(err => {
+                console.error('Error checking recurring maintenance:', err);
+            });
+        }
+        
+        // ✅ تشغيل فحص الصيانة المجدولة كل دقيقة
+        setInterval(() => {
+            checkAndCreateScheduledMaintenance();
+        }, 60000); // كل دقيقة
+        
+        // ✅ تشغيل فحص فوري عند التحميل
+        setTimeout(() => {
+            checkAndCreateScheduledMaintenance();
+        }, 5000);
+        
+        window.handleSchedulerFrequencyChange = handleSchedulerFrequencyChange;
+        window.addScheduledMaintenance = addScheduledMaintenance;
+        window.deleteScheduledMaintenance = deleteScheduledMaintenance;
+        
+        // Handle inspection photo uploads (for old inspection modal)
+        (function() {
             const damagePhoto = document.getElementById('damage-photo');
             const lostfoundPhoto = document.getElementById('lostfound-photo');
             
@@ -8293,69 +9910,376 @@ function renderMaintenanceCards() {
         // == Shift Log ================================
         // ===============================================
         
-        function showShiftLog() {
+        let allShiftLogData = {
+            notes: [],
+            rooms: [],
+            requests: [],
+            maintenance: [],
+            inspections: []
+        };
+        
+        // ✅ تعريف الدوال في window فوراً
+        window.showShiftLog = function() {
+            if (typeof toggleSideMenu === 'function') {
             toggleSideMenu();
-            loadShiftLogs();
-            document.getElementById('shift-log-modal').style.display = 'flex';
-        }
-        
-        function closeShiftLog() {
+            }
             const modal = document.getElementById('shift-log-modal');
-            if (modal) modal.style.display = 'none';
-        }
+            if (modal) {
+                modal.style.display = 'flex';
+                loadAllShiftLogData();
+            } else {
+                console.error('shift-log-modal not found');
+            }
+        };
         
-        async function loadShiftLogs() {
+        window.closeShiftLog = function() {
+            const modal = document.getElementById('shift-log-modal');
+            if (modal) {
+                modal.style.display = 'none';
+        }
+        };
+        
+        async function loadAllShiftLogData() {
             if (!db) return;
             
             try {
-                // جلب البيانات بدون orderBy لتجنب الحاجة لـ index
-                const snapshot = await db.collection('shiftLogs').where('branch', '==', 'default').get();
-                const logs = [];
-                snapshot.forEach(doc => {
-                    logs.push({ id: doc.id, ...doc.data() });
+                // جلب ملاحظات الشفت
+                const notesSnapshot = await db.collection('shiftLogs').where('branch', '==', 'default').get();
+                allShiftLogData.notes = [];
+                notesSnapshot.forEach(doc => {
+                    allShiftLogData.notes.push({ id: doc.id, ...doc.data(), category: 'note' });
                 });
                 
-                // ترتيب محلياً حسب timestamp
-                logs.sort((a, b) => {
+                // جلب بيانات الغرف (من log) - كل الأحداث (بدء وانتهاء)
+                allShiftLogData.rooms = [];
+                // أحداث الانتهاء من log
+                (appState.log || []).forEach(item => {
+                    allShiftLogData.rooms.push({
+                        ...item,
+                        category: 'room',
+                        eventType: 'finish',
+                        timestamp: item.finishTime || item.id
+                    });
+                });
+                // أحداث البدء من rooms (الغرف النشطة)
+                (appState.rooms || []).forEach(room => {
+                    if (room.startTime) {
+                        allShiftLogData.rooms.push({
+                            num: room.num,
+                            type: room.type,
+                            status: room.status,
+                            category: 'room',
+                            eventType: 'start',
+                            timestamp: room.startTime,
+                            startTime: room.startTime
+                        });
+                    }
+                });
+                
+                // جلب بيانات الطلبات (من guestRequestsLog و guestRequests) - كل الأحداث
+                allShiftLogData.requests = [];
+                // أحداث الانتهاء
+                (appState.guestRequestsLog || []).forEach(item => {
+                    allShiftLogData.requests.push({
+                        ...item,
+                        category: 'request',
+                        eventType: 'finish',
+                        timestamp: item.finishTime || item.startTime || Date.now()
+                    });
+                });
+                // أحداث البدء من الطلبات النشطة
+                (appState.guestRequests || []).forEach(req => {
+                    if (req.startTime && req.status !== 'completed') {
+                        allShiftLogData.requests.push({
+                            num: req.num,
+                            details: req.details,
+                            requestType: req.requestType,
+                            status: req.status,
+                            category: 'request',
+                            eventType: 'start',
+                            timestamp: req.startTime,
+                            startTime: req.startTime
+                        });
+                    }
+                });
+                
+                // جلب بيانات الصيانة (من completedMaintenanceLog و activeMaintenance) - كل الأحداث
+                allShiftLogData.maintenance = [];
+                // أحداث الانتهاء
+                (appState.completedMaintenanceLog || []).forEach(item => {
+                    allShiftLogData.maintenance.push({
+                        ...item,
+                        category: 'maintenance',
+                        eventType: 'finish',
+                        timestamp: item.finishTime || Date.now()
+                    });
+                });
+                // أحداث البدء من الصيانة النشطة
+                (appState.activeMaintenance || []).forEach(maint => {
+                    if (maint.startTime && maint.status !== 'completed') {
+                        allShiftLogData.maintenance.push({
+                            num: maint.num,
+                            maintDesc: maint.maintDesc,
+                            status: maint.status,
+                            category: 'maintenance',
+                            eventType: 'start',
+                            timestamp: maint.startTime,
+                            startTime: maint.startTime
+                        });
+                    }
+                });
+                
+                // جلب بيانات طلبات الفحص (inspectionCards)
+                allShiftLogData.inspections = [];
+                try {
+                    const inspectionSnapshot = await db.collection('inspectionCards')
+                        .where('branch', '==', 'default')
+                        .orderBy('timestamp', 'desc')
+                        .limit(1000)
+                        .get();
+                    inspectionSnapshot.forEach(doc => {
+                        const data = doc.data();
+                        allShiftLogData.inspections.push({
+                            id: doc.id,
+                            ...data,
+                            category: 'inspection',
+                            eventType: 'start',
+                            timestamp: data.timestamp || Date.now()
+                        });
+                    });
+                } catch (e) {
+                    console.error('Error loading inspections:', e);
+                }
+                
+                // تطبيق الفلاتر الافتراضية
+                applyShiftLogFilters();
+            } catch (e) {
+                console.error('Error loading shift log data:', e);
+            }
+        }
+        
+        function applyShiftLogFilters() {
+            const timeFrom = document.getElementById('shift-filter-time-from')?.value;
+            const timeTo = document.getElementById('shift-filter-time-to')?.value;
+            const filterRooms = document.getElementById('shift-filter-rooms')?.checked !== false;
+            const filterCleaning = document.getElementById('shift-filter-cleaning')?.checked !== false;
+            const filterCheckout = document.getElementById('shift-filter-checkout')?.checked !== false;
+            const filterStayover = document.getElementById('shift-filter-stayover')?.checked !== false;
+            const filterQRRequests = document.getElementById('shift-filter-qr-requests')?.checked !== false;
+            const filterMaintenance = document.getElementById('shift-filter-maintenance')?.checked !== false;
+            
+            let filteredData = [];
+            
+            // إضافة ملاحظات الشفت
+            allShiftLogData.notes.forEach(note => {
+                if (isInTimeRange(note.timestamp, timeFrom, timeTo)) {
+                    filteredData.push(note);
+                }
+            });
+            
+            // إضافة بيانات الغرف
+            if (filterRooms) {
+                allShiftLogData.rooms.forEach(room => {
+                    if (isInTimeRange(room.timestamp, timeFrom, timeTo)) {
+                        if (room.type === 'out' && filterCheckout) {
+                            filteredData.push(room);
+                        } else if (room.type === 'stay' && filterStayover) {
+                            filteredData.push(room);
+                        } else if (filterCleaning && (room.type === 'out' || room.type === 'stay')) {
+                            filteredData.push(room);
+                        }
+                    }
+                });
+            }
+            
+            // إضافة بيانات الطلبات
+            if (filterQRRequests) {
+                allShiftLogData.requests.forEach(req => {
+                    if (isInTimeRange(req.timestamp, timeFrom, timeTo)) {
+                        if (req.fromGuest || filterQRRequests) {
+                            filteredData.push(req);
+                        }
+                    }
+                });
+            }
+            
+            // إضافة بيانات الصيانة
+            if (filterMaintenance) {
+                allShiftLogData.maintenance.forEach(maint => {
+                    if (isInTimeRange(maint.timestamp, timeFrom, timeTo)) {
+                        filteredData.push(maint);
+                    }
+                });
+            }
+            
+            // إضافة بيانات طلبات الفحص
+            const filterInspections = document.getElementById('shift-filter-inspections')?.checked !== false;
+            if (filterInspections) {
+                allShiftLogData.inspections.forEach(inspection => {
+                    if (isInTimeRange(inspection.timestamp, timeFrom, timeTo)) {
+                        filteredData.push(inspection);
+                    }
+                });
+            }
+            
+            // ترتيب حسب الوقت
+            filteredData.sort((a, b) => {
                     const aTime = a.timestamp?.toMillis ? a.timestamp.toMillis() : (a.timestamp || 0);
                     const bTime = b.timestamp?.toMillis ? b.timestamp.toMillis() : (b.timestamp || 0);
                     return bTime - aTime; // ترتيب تنازلي
                 });
                 
-                // تحديد أول 20 عنصر
-                const limitedLogs = logs.slice(0, 20);
-                
-                renderShiftLogsList(limitedLogs);
-            } catch (e) {
-                console.error('Error loading shift logs:', e);
-            }
+            renderShiftLogsList(filteredData);
         }
         
-        function renderShiftLogsList(logs) {
+        function isInTimeRange(timestamp, timeFrom, timeTo) {
+            if (!timeFrom && !timeTo) return true;
+            
+            const itemTime = timestamp?.toMillis ? timestamp.toMillis() : (timestamp || 0);
+            const itemDate = new Date(itemTime);
+            const itemHours = itemDate.getHours();
+            const itemMinutes = itemDate.getMinutes();
+            const itemTimeMinutes = itemHours * 60 + itemMinutes;
+            
+            if (timeFrom) {
+                const [fromHours, fromMinutes] = timeFrom.split(':').map(Number);
+                const fromTimeMinutes = fromHours * 60 + fromMinutes;
+                if (itemTimeMinutes < fromTimeMinutes) return false;
+            }
+            
+            if (timeTo) {
+                const [toHours, toMinutes] = timeTo.split(':').map(Number);
+                const toTimeMinutes = toHours * 60 + toMinutes;
+                if (itemTimeMinutes > toTimeMinutes) return false;
+            }
+            
+            return true;
+        }
+        
+        function renderShiftLogsList(data) {
             const list = document.getElementById('shift-logs-list');
             if (!list) return;
             
-            if (logs.length === 0) {
-                list.innerHTML = '<p style="text-align:center; color:var(--text-sec); padding:20px;">لا توجد سجلات</p>';
+            if (data.length === 0) {
+                list.innerHTML = '<div style="text-align:center; color:var(--text-sec); padding:40px 20px; background:rgba(245,158,11,0.05); border-radius:12px; border:2px dashed rgba(245,158,11,0.2);"><div style="font-size:3rem; margin-bottom:10px;">📊</div><p style="font-size:0.95rem; font-weight:600;">لا توجد نتائج</p><p style="font-size:0.85rem; margin-top:5px;">جرب تغيير الفلاتر</p></div>';
                 return;
             }
             
             const typeLabels = {
-                handover: 'تسليم',
-                note: 'ملاحظة',
-                issue: 'مشكلة'
+                handover: '📋 تسليم',
+                note: '📝 ملاحظة',
+                issue: '⚠️ مشكلة'
             };
             
-            list.innerHTML = logs.map(log => {
-                const date = new Date(log.timestamp);
-                const timeStr = date.toLocaleString('ar-EG');
-                return `
-                    <div style="padding:10px; margin-bottom:8px; background:#f8fafc; border-radius:8px; border-left:3px solid var(--primary);">
-                        <div style="font-weight:700; font-size:0.9rem; margin-bottom:4px;">${typeLabels[log.type] || log.type}</div>
-                        <div style="font-size:0.85rem; color:var(--text-sec); margin-bottom:4px;">${log.notes}</div>
-                        <div style="font-size:0.75rem; color:var(--text-sec);">${timeStr}</div>
+            list.innerHTML = data.map(item => {
+                let cardHtml = '';
+                const timestamp = item.timestamp?.toMillis ? item.timestamp.toMillis() : (item.timestamp || 0);
+                const date = new Date(timestamp);
+                const timeStr = date.toLocaleString('ar-EG', { 
+                    hour: '2-digit', 
+                    minute: '2-digit',
+                    day: 'numeric',
+                    month: 'short'
+                });
+                
+                if (item.category === 'note') {
+                    // ملاحظة شفت
+                    cardHtml = `
+                        <div style="background: linear-gradient(135deg, rgba(245,158,11,0.1), rgba(217,119,6,0.1)); padding: 14px; margin-bottom: 10px; border-radius: 12px; border: 2px solid rgba(245,158,11,0.3);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <div style="font-weight: 800; font-size: 1rem; color: #F59E0B;">${typeLabels[item.type] || item.type}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-sec); font-weight: 600;">${timeStr}</div>
+                            </div>
+                            <div style="font-size: 0.9rem; color: var(--text-main); line-height: 1.5;">${item.notes}</div>
                     </div>
                 `;
+                } else if (item.category === 'room') {
+                    // ✅ غرفة - تسجيل تفصيلي كامل
+                    const roomType = item.type === 'out' ? '🚪 خروج' : item.type === 'stay' ? '🏠 ساكن' : '🧹 تنظيف';
+                    const roomColor = item.type === 'out' ? '#EF4444' : item.type === 'stay' ? '#10B981' : '#0EA5E9';
+                    const eventLabel = item.eventType === 'start' ? 'بدء' : 'انتهاء';
+                    const guestStatus = item.guestStatus || '';
+                    const isSuperTurbo = item.isSuperTurbo ? '⚡ Super Turbo' : '';
+                    const isLate = item.isLate ? '⚠️ متأخر' : '';
+                    
+                    cardHtml = `
+                        <div style="background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(56,189,248,0.1)); padding: 14px; margin-bottom: 10px; border-radius: 12px; border: 2px solid rgba(14,165,233,0.3);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width: 45px; height: 45px; background: linear-gradient(135deg, ${roomColor}, ${roomColor}dd); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 800; color: white; box-shadow: 0 2px 6px rgba(0,0,0,0.2);">${item.num || '--'}</div>
+                                    <div>
+                                        <div style="font-weight: 800; font-size: 1rem; color: var(--text-main);">${roomType} - ${eventLabel}</div>
+                                        <div style="font-size: 0.85rem; color: var(--text-sec);">
+                                            ${item.eventType === 'finish' ? `المدة: ${item.duration || '--'}` : `الحالة: ${item.status || '--'}`}
+                                            ${guestStatus ? ` | النزيل: ${guestStatus}` : ''}
+                                            ${isSuperTurbo ? ` | ${isSuperTurbo}` : ''}
+                                            ${isLate ? ` | ${isLate}` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-sec); font-weight: 600;">${timeStr}</div>
+                            </div>
+                            ${item.status && item.eventType === 'finish' ? `<div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(0,0,0,0.1);"><strong>الحالة النهائية:</strong> ${item.status}</div>` : ''}
+                            ${item.startTime && item.eventType === 'finish' ? `<div style="font-size: 0.8rem; color: var(--text-sec); margin-top: 4px;">⏱️ وقت البدء: ${new Date(item.startTime).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</div>` : ''}
+                        </div>
+                    `;
+                } else if (item.category === 'request') {
+                    // ✅ طلب - تسجيل تفصيلي كامل
+                    const isQR = item.fromGuest ? '📱' : '🛎️';
+                    const isInspection = item.isInspection ? '📋 تقرير فحص' : '';
+                    const eventLabel = item.eventType === 'start' ? 'بدء' : 'انتهاء';
+                    const isUrgent = item.isUrgent ? '🚨 عاجل' : '';
+                    const requestType = item.requestType || '';
+                    
+                    cardHtml = `
+                        <div style="background: linear-gradient(135deg, rgba(59,130,246,0.1), rgba(139,92,246,0.1)); padding: 14px; margin-bottom: 10px; border-radius: 12px; border: 2px solid rgba(59,130,246,0.3);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width: 45px; height: 45px; background: linear-gradient(135deg, #3B82F6, #6366F1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 800; color: white; box-shadow: 0 2px 6px rgba(59,130,246,0.3);">${item.num || '--'}</div>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 800; font-size: 1rem; color: var(--text-main);">
+                                            ${isInspection || isQR} ${isInspection ? '' : 'طلب'} - ${eventLabel}
+                                            ${isUrgent ? ` ${isUrgent}` : ''}
+                                        </div>
+                                        <div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 4px;">
+                                            ${item.details || '--'}
+                                        </div>
+                                        ${requestType ? `<div style="font-size: 0.8rem; color: var(--text-sec); margin-top: 2px;">النوع: ${requestType}</div>` : ''}
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-sec); font-weight: 600;">${timeStr}</div>
+                            </div>
+                            ${item.status && item.eventType === 'finish' ? `<div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(0,0,0,0.1);"><strong>الحالة:</strong> ${item.status}</div>` : ''}
+                        </div>
+                    `;
+                } else if (item.category === 'maintenance') {
+                    // ✅ صيانة - تسجيل تفصيلي كامل
+                    const eventLabel = item.eventType === 'start' ? 'بدء' : 'انتهاء';
+                    const isUrgent = item.isUrgent ? '🚨 عاجل' : '';
+                    
+                    cardHtml = `
+                        <div style="background: linear-gradient(135deg, rgba(14,165,233,0.1), rgba(56,189,248,0.1)); padding: 14px; margin-bottom: 10px; border-radius: 12px; border: 2px solid rgba(14,165,233,0.3);">
+                            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div style="width: 45px; height: 45px; background: linear-gradient(135deg, var(--maint-color), #0EA5E9); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.3rem; font-weight: 800; color: white; box-shadow: 0 2px 6px rgba(14,165,233,0.3);">${item.num || '--'}</div>
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: 800; font-size: 1rem; color: var(--text-main);">
+                                            🛠️ صيانة - ${eventLabel}
+                                            ${isUrgent ? ` ${isUrgent}` : ''}
+                                        </div>
+                                        <div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 4px;">
+                                            ${item.maintDesc || '--'}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-sec); font-weight: 600;">${timeStr}</div>
+                            </div>
+                            ${item.status && item.eventType === 'finish' ? `<div style="font-size: 0.85rem; color: var(--text-sec); margin-top: 6px; padding-top: 6px; border-top: 1px solid rgba(0,0,0,0.1);"><strong>الحالة:</strong> ${item.status}</div>` : ''}
+                        </div>
+                    `;
+                }
+                
+                return cardHtml;
             }).join('');
         }
         
@@ -8385,13 +10309,15 @@ function renderMaintenanceCards() {
                 });
                 
                 if (notesInput) notesInput.value = '';
-                loadShiftLogs();
-                // تم حذف showModalSuccess
+                showMiniAlert('✅ تم حفظ الملاحظة', 'success');
+                loadAllShiftLogData(); // ✅ إعادة تحميل جميع البيانات
             } catch (e) {
                 console.error('Error saving shift log:', e);
                 showMiniAlert('❌ فشل الحفظ', 'error');
             }
         }
+        
+        window.applyShiftLogFilters = applyShiftLogFilters;
         
         // ===============================================
         // == Loyalty Check ============================
@@ -8401,18 +10327,26 @@ function renderMaintenanceCards() {
         // == News Ticker ==============================
         // ===============================================
         
-        function showNewsTickerEditor() {
+        // ✅ تعريف الدوال في window فوراً
+        window.showNewsTickerEditor = function() {
+            if (typeof toggleSideMenu === 'function') {
             toggleSideMenu();
-            verifyAdminPIN(() => {
-                loadNewsTicker();
-                document.getElementById('news-ticker-modal').style.display = 'flex';
-            });
-        }
-        
-        function closeNewsTickerEditor() {
+            }
             const modal = document.getElementById('news-ticker-modal');
-            if (modal) modal.style.display = 'none';
+            if (modal) {
+                modal.style.display = 'flex';
+                loadNewsTicker();
+            } else {
+                console.error('news-ticker-modal not found');
         }
+        };
+        
+        window.closeNewsTickerEditor = function() {
+            const modal = document.getElementById('news-ticker-modal');
+            if (modal) {
+                modal.style.display = 'none';
+        }
+        };
         
         async function loadNewsTicker() {
             if (!db) return;
@@ -8421,18 +10355,63 @@ function renderMaintenanceCards() {
                 const doc = await db.collection('settings').doc('newsTicker_default').get();
                 const messageInput = document.getElementById('news-ticker-message');
                 const enabledCheckbox = document.getElementById('news-ticker-enabled');
+                const durationInput = document.getElementById('news-ticker-duration');
+                const typeSelect = document.getElementById('news-ticker-type');
                 
                 if (doc.exists) {
                     const data = doc.data();
-                    if (messageInput) messageInput.value = data.message || '';
+                    if (messageInput) {
+                        messageInput.value = data.message || '';
+                        updateNewsTickerPreview();
+                    }
                     if (enabledCheckbox) enabledCheckbox.checked = data.enabled !== false;
+                    if (durationInput) durationInput.value = data.duration || 24;
+                    if (typeSelect) typeSelect.value = data.type || 'normal';
                 } else {
                     if (messageInput) messageInput.value = '';
                     if (enabledCheckbox) enabledCheckbox.checked = false;
+                    if (durationInput) durationInput.value = 24;
+                    if (typeSelect) typeSelect.value = 'normal';
+                }
+                
+                // إضافة مستمع لتحديث المعاينة
+                if (messageInput) {
+                    messageInput.addEventListener('input', updateNewsTickerPreview);
+                }
+                if (typeSelect) {
+                    typeSelect.addEventListener('change', updateNewsTickerPreview);
                 }
             } catch (e) {
                 console.error('Error loading news ticker:', e);
             }
+        }
+        
+        function updateNewsTickerPreview() {
+            const messageInput = document.getElementById('news-ticker-message');
+            const typeSelect = document.getElementById('news-ticker-type');
+            const preview = document.getElementById('news-ticker-preview');
+            
+            if (!preview) return;
+            
+            const message = messageInput ? messageInput.value.trim() : '';
+            const type = typeSelect ? typeSelect.value : 'normal';
+            
+            if (!message) {
+                preview.innerHTML = '<span style="color: var(--text-sec);">اكتب الرسالة لرؤية المعاينة...</span>';
+                return;
+            }
+            
+            const typeStyles = {
+                normal: { bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)', icon: '📢' },
+                urgent: { bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)', icon: '🚨' },
+                info: { bg: 'rgba(14,165,233,0.1)', border: 'rgba(14,165,233,0.3)', icon: 'ℹ️' },
+                warning: { bg: 'rgba(245,158,11,0.1)', border: 'rgba(245,158,11,0.3)', icon: '⚠️' }
+            };
+            
+            const style = typeStyles[type] || typeStyles.normal;
+            preview.style.background = `linear-gradient(135deg, ${style.bg}, rgba(255,255,255,0.5))`;
+            preview.style.borderColor = style.border;
+            preview.innerHTML = `<span style="font-weight: 600; color: var(--text-main);">${style.icon} ${message}</span>`;
         }
         
         async function saveNewsTicker() {
@@ -8443,24 +10422,148 @@ function renderMaintenanceCards() {
             
             const messageInput = document.getElementById('news-ticker-message');
             const enabledCheckbox = document.getElementById('news-ticker-enabled');
+            const durationInput = document.getElementById('news-ticker-duration');
+            const typeSelect = document.getElementById('news-ticker-type');
+            
             const message = messageInput ? messageInput.value.trim() : '';
             const enabled = enabledCheckbox ? enabledCheckbox.checked : false;
+            const duration = durationInput ? parseInt(durationInput.value) : 24;
+            const type = typeSelect ? typeSelect.value : 'normal';
+            
+            if (enabled && !message) {
+                showMiniAlert('⚠️ يرجى إدخال الرسالة', 'warning');
+                return;
+            }
             
             try {
+                const expiresAt = enabled ? Date.now() + (duration * 60 * 60 * 1000) : null;
+                
                 await db.collection('settings').doc('newsTicker_default').set({
                     message,
                     enabled,
+                    duration,
+                    type,
+                    expiresAt, // ✅ وقت انتهاء الرسالة
                     branch: 'default',
                     updatedAt: Date.now()
                 }, { merge: true });
                 
+                showMiniAlert('✅ تم حفظ الرسالة', 'success');
                 closeNewsTickerEditor();
-                // تم حذف showModalSuccess
+                renderNewsTicker(); // ✅ تحديث عرض الرسالة
             } catch (e) {
                 console.error('Error saving news ticker:', e);
                 showMiniAlert('❌ فشل الحفظ', 'error');
             }
         }
+        
+        // ✅ عرض الأخبار في قسم الطلبات
+        async function renderNewsTicker() {
+            if (!db) return;
+            
+            try {
+                const doc = await db.collection('settings').doc('newsTicker_default').get();
+                const newsContainer = document.getElementById('news-ticker-container');
+                
+                if (!newsContainer) {
+                    // إنشاء حاوية الأخبار إذا لم تكن موجودة
+                    const requestsSection = document.getElementById('guest-requests-section');
+                    if (requestsSection) {
+                        const container = document.createElement('div');
+                        container.id = 'news-ticker-container';
+                        container.style.marginBottom = '15px';
+                        requestsSection.insertBefore(container, requestsSection.firstChild.nextSibling);
+                    } else {
+                        return;
+                    }
+                }
+                
+                const container = document.getElementById('news-ticker-container');
+                if (!container) return;
+                
+                if (!doc.exists) {
+                    container.innerHTML = '';
+                    container.style.display = 'none';
+                    return;
+                }
+                
+                const data = doc.data();
+                const now = Date.now();
+                
+                // ✅ التحقق من انتهاء المدة
+                if (!data.enabled || (data.expiresAt && now > data.expiresAt)) {
+                    container.innerHTML = '';
+                    container.style.display = 'none';
+                    // إلغاء التفعيل تلقائياً
+                    if (data.expiresAt && now > data.expiresAt) {
+                        await db.collection('settings').doc('newsTicker_default').update({
+                            enabled: false
+                        });
+                    }
+                    return;
+                }
+                
+                if (!data.message || !data.message.trim()) {
+                    container.innerHTML = '';
+                    container.style.display = 'none';
+                    return;
+                }
+                
+                const typeStyles = {
+                    normal: { bg: 'linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.15))', border: 'rgba(59,130,246,0.4)', icon: '📢', color: '#3B82F6' },
+                    urgent: { bg: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(220,38,38,0.15))', border: 'rgba(239,68,68,0.4)', icon: '🚨', color: '#EF4444' },
+                    info: { bg: 'linear-gradient(135deg, rgba(14,165,233,0.15), rgba(56,189,248,0.15))', border: 'rgba(14,165,233,0.4)', icon: 'ℹ️', color: '#0EA5E9' },
+                    warning: { bg: 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(217,119,6,0.15))', border: 'rgba(245,158,11,0.4)', icon: '⚠️', color: '#F59E0B' }
+                };
+                
+                const style = typeStyles[data.type || 'normal'] || typeStyles.normal;
+                const remainingHours = data.expiresAt ? Math.ceil((data.expiresAt - now) / (60 * 60 * 1000)) : data.duration || 24;
+                
+                container.innerHTML = `
+                    <div style="background: ${style.bg}; padding: 16px; border-radius: 16px; border: 3px solid ${style.border}; box-shadow: 0 4px 12px rgba(0,0,0,0.1); position: relative; overflow: hidden;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <div style="font-size: 2rem; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">${style.icon}</div>
+                            <div style="flex: 1;">
+                                <div style="font-weight: 800; font-size: 1.1rem; color: ${style.color}; margin-bottom: 4px; line-height: 1.4;">
+                                    ${data.message}
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-sec); font-weight: 600;">
+                                    ⏰ متبقى ${remainingHours} ${remainingHours === 1 ? 'ساعة' : 'ساعات'}
+                                </div>
+                            </div>
+                            <button onclick="dismissNewsTicker()" style="background: rgba(0,0,0,0.1); border: none; border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 1.2rem; transition: all 0.3s;" 
+                                    onmouseover="this.style.background='rgba(0,0,0,0.2)';" 
+                                    onmouseout="this.style.background='rgba(0,0,0,0.1)';"
+                                    title="إخفاء الرسالة">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.style.display = 'block';
+            } catch (e) {
+                console.error('Error rendering news ticker:', e);
+            }
+        }
+        
+        async function dismissNewsTicker() {
+            if (!db) return;
+            try {
+                await db.collection('settings').doc('newsTicker_default').update({
+                    enabled: false
+                });
+                renderNewsTicker();
+            } catch (e) {
+                console.error('Error dismissing news ticker:', e);
+            }
+        }
+        
+        // ✅ فحص انتهاء مدة الرسالة كل دقيقة
+        setInterval(() => {
+            renderNewsTicker();
+        }, 60000);
+        
+        window.dismissNewsTicker = dismissNewsTicker;
         
         // ===============================================
         // == Admin PIN Verification ====================
@@ -8536,15 +10639,14 @@ function renderMaintenanceCards() {
         window.deleteService = deleteService;
         window.toggleServiceProperty = toggleServiceProperty;
         window.handleServiceImageUpload = handleServiceImageUpload;
-        window.showMaintenanceScheduler = showMaintenanceScheduler;
-        window.showShiftLog = showShiftLog;
-        window.showNewsTickerEditor = showNewsTickerEditor;
+        // ✅ الدوال معرّفة مسبقاً في window
         window.showRoomQuickInfo = showRoomQuickInfo;
         window.showAdvancedReports = showAdvancedReports;
         window.closeAdvancedReports = closeAdvancedReports;
         window.switchReportTab = switchReportTab;
         window.generateDailyReport = generateDailyReport;
         window.showPurchasesModal = showPurchasesModal;
+        window.closePurchasesModal = closePurchasesModal;
         // تم استبدال addMenuItem بـ openAddServiceModal
         // window.addMenuItem = addMenuItem; // محذوف - استخدم openAddServiceModal
         // window.removeMenuItem = removeMenuItem; // محذوف - استخدم deleteService
@@ -8563,17 +10665,26 @@ function renderMaintenanceCards() {
         window.showInspectionDetails = showInspectionDetails;
         // تم حذف وظائف الأرشيف
         window.toggleFABMenu = toggleFABMenu;
-        window.openFABOption = openFABOption;
+        // تم حذف openFABOption - تم استبدالها بـ showUnifiedAddModal
         window.openAddModal = openAddModal;
+        window.switchUnifiedTab = switchUnifiedTab;
+        window.closeUnifiedAddModal = closeUnifiedAddModal;
+        // تم حذف openUnifiedInspection - تم استبدالها بـ submitUnifiedInspection
         window.toggleSideMenu = toggleSideMenu;
         window.toggleFocusMode = toggleFocusMode;
         window.toggleLanguage = toggleLanguage;
         
         // تهيئة التطبيق عند تحميل الصفحة
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initApp);
+            document.addEventListener('DOMContentLoaded', () => {
+                initApp();
+                // ✅ إعداد إضافي للأزرار بعد تحميل DOM بالكامل
+                setTimeout(() => setupSideMenuButtons(), 1000);
+            });
         } else {
             initApp();
+            // ✅ إعداد إضافي للأزرار بعد تحميل DOM بالكامل
+            setTimeout(() => setupSideMenuButtons(), 1000);
         }
         
         console.log('✅ Adora System is ready!');
@@ -8711,6 +10822,168 @@ function renderMaintenanceCards() {
             showMiniAlert(`✅ تم توليد ${to - from + 1} رمز QR`, 'success');
         }
         
+        // ✅ دالة لتحميل QR كملف PDF عالي الجودة
+        async function downloadQRAsPDF() {
+            const printArea = document.getElementById('qr-print-area');
+            if (!printArea || printArea.children.length === 0) {
+                showMiniAlert('⚠️ لا توجد رموز QR للتحميل. يرجى توليد QR أولاً', 'warning');
+                return;
+            }
+            
+            try {
+                showMiniAlert('⏳ جاري إنشاء PDF...', 'info');
+                
+                // ✅ إظهار printArea مؤقتاً لالتقاط الصور
+                const originalDisplay = printArea.style.display;
+                printArea.style.display = 'block';
+                printArea.style.position = 'absolute';
+                printArea.style.left = '-9999px';
+                printArea.style.top = '0';
+                
+                // ✅ انتظار تحميل جميع الصور
+                const images = printArea.querySelectorAll('img');
+                const imagePromises = Array.from(images).map(img => {
+                    if (img.complete) return Promise.resolve();
+                    return new Promise((resolve, reject) => {
+                        img.onload = resolve;
+                        img.onerror = reject;
+                        setTimeout(resolve, 2000); // timeout بعد 2 ثانية
+                    });
+                });
+                
+                await Promise.all(imagePromises);
+                
+                // ✅ استخدام jsPDF مباشرة (أكثر موثوقية)
+                if (typeof window.jspdf !== 'undefined' || typeof jsPDF !== 'undefined') {
+                    const { jsPDF } = window.jspdf || window;
+                    const pdf = new jsPDF('p', 'mm', 'a4');
+                    const pageWidth = pdf.internal.pageSize.getWidth();
+                    const pageHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 10;
+                    const qrSize = 50; // حجم QR في PDF (mm)
+                    const cols = 3;
+                    const spacing = (pageWidth - (margin * 2) - (qrSize * cols)) / (cols + 1);
+                    
+                    let x = margin + spacing;
+                    let y = margin;
+                    let currentCol = 0;
+                    
+                    // ✅ تحويل كل QR إلى صورة وإضافتها للـ PDF
+                    for (let i = 0; i < printArea.children.length; i++) {
+                        const card = printArea.children[i];
+                        const qrImg = card.querySelector('img');
+                        const labelDiv = Array.from(card.children).find(child => child.tagName === 'DIV' && child.textContent.includes('غرفة'));
+                        
+                        if (qrImg && qrImg.src) {
+                            // إذا تجاوزنا نهاية الصفحة، انتقل للصفحة التالية
+                            if (y + qrSize + 20 > pageHeight - margin) {
+                                pdf.addPage();
+                                y = margin;
+                                currentCol = 0;
+                                x = margin + spacing;
+                            }
+                            
+                            try {
+                                // ✅ إضافة QR Code كصورة
+                                const imgData = qrImg.src;
+                                if (imgData && imgData.startsWith('data:image')) {
+                                    pdf.addImage(imgData, 'PNG', x, y, qrSize, qrSize);
+                                    
+                                    // إضافة النص
+                                    if (labelDiv) {
+                                        pdf.setFontSize(12);
+                                        pdf.text(labelDiv.textContent.trim(), x + (qrSize / 2), y + qrSize + 10, { align: 'center' });
+                                    }
+                                    
+                                    // الانتقال للعمود التالي
+                                    currentCol++;
+                                    if (currentCol >= cols) {
+                                        currentCol = 0;
+                                        x = margin + spacing;
+                                        y += qrSize + 25;
+                                    } else {
+                                        x += qrSize + spacing;
+                                    }
+                                }
+                            } catch(imgError) {
+                                console.error('Error adding image to PDF:', imgError);
+                            }
+                        }
+                    }
+                    
+                    // ✅ إعادة إخفاء printArea
+                    printArea.style.display = originalDisplay;
+                    printArea.style.position = '';
+                    printArea.style.left = '';
+                    printArea.style.top = '';
+                    
+                    pdf.save(`QR_Codes_${Date.now()}.pdf`);
+                    showMiniAlert('✅ تم تحميل PDF بنجاح', 'success');
+                    return;
+                }
+                
+                // ✅ Fallback: استخدام html2pdf
+                if (typeof html2pdf !== 'undefined') {
+                    const opt = {
+                        margin: [10, 10, 10, 10],
+                        filename: `QR_Codes_${Date.now()}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { 
+                            scale: 2,
+                            useCORS: true,
+                            letterRendering: true,
+                            logging: false,
+                            allowTaint: true
+                        },
+                        jsPDF: { 
+                            unit: 'mm', 
+                            format: 'a4', 
+                            orientation: 'portrait',
+                            compress: true
+                        },
+                        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+                    };
+                    
+                    await html2pdf().set(opt).from(printArea).save();
+                    
+                    // ✅ إعادة إخفاء printArea
+                    printArea.style.display = originalDisplay;
+                    printArea.style.position = '';
+                    printArea.style.left = '';
+                    printArea.style.top = '';
+                    
+                    showMiniAlert('✅ تم تحميل PDF بنجاح', 'success');
+                    return;
+                }
+                
+                // ✅ Fallback: استخدام window.print
+                printArea.style.display = 'block';
+                printArea.style.position = '';
+                printArea.style.left = '';
+                printArea.style.top = '';
+                showMiniAlert('⚠️ مكتبة PDF غير متاحة، سيتم فتح نافذة الطباعة', 'warning');
+                window.print();
+                setTimeout(() => {
+                    printArea.style.display = originalDisplay;
+                }, 1000);
+                
+            } catch(e) {
+                console.error('Error generating PDF:', e);
+                showMiniAlert('❌ فشل إنشاء PDF: ' + e.message, 'error');
+                
+                // ✅ إعادة إخفاء printArea في حالة الخطأ
+                const printArea = document.getElementById('qr-print-area');
+                if (printArea) {
+                    printArea.style.display = 'none';
+                    printArea.style.position = '';
+                    printArea.style.left = '';
+                    printArea.style.top = '';
+                }
+            }
+        }
+        
+        window.downloadQRAsPDF = downloadQRAsPDF;
+        
         // إغلاق مودال (دالة مساعدة)
         function closeModal(id) {
             const modal = document.getElementById(id);
@@ -8846,8 +11119,19 @@ function renderMaintenanceCards() {
             }, 500);
         }
         
+        // ✅ متغير لمنع الإرسال المكرر
+        let isSendingGuestRequest = false;
+        
         // دالة إرسال طلب النزيل
         function sendGuestRequest(room, category, details, mode = 'instant', scheduledTime = null) {
+            // ✅ منع الإرسال المكرر
+            if (isSendingGuestRequest) {
+                if (typeof showMiniAlert !== 'undefined') {
+                    showMiniAlert('⏳ جاري إرسال الطلب...', 'info');
+                }
+                return;
+            }
+            
             if (!room || room === '--') {
                 if (typeof showMiniAlert !== 'undefined') {
                     showMiniAlert('⚠️ رقم الغرفة غير معروف', 'warning');
@@ -8890,7 +11174,52 @@ function renderMaintenanceCards() {
                 collectionName = 'activeMaintenance';
                 payload.maintDesc = details;
                 payload.type = 'maint';
+                
+                // ✅ فحص تكرار طلبات الصيانة قبل الإرسال
+                if (typeof db !== 'undefined' && db) {
+                    db.collection('activeMaintenance')
+                        .where('num', '==', roomNum)
+                        .where('status', 'in', ['active', 'acknowledging', 'in-progress'])
+                        .limit(1)
+                        .get()
+                        .then(snapshot => {
+                            if (!snapshot.empty) {
+                                let isDuplicate = false;
+                                snapshot.forEach(doc => {
+                                    const data = doc.data();
+                                    if (data.maintDesc && payload.maintDesc &&
+                                        data.maintDesc.trim() === payload.maintDesc.trim() &&
+                                        Math.abs((data.startTime || 0) - (payload.startTime || 0)) < 10000) {
+                                        isDuplicate = true;
+                                    }
+                                });
+                                
+                                if (isDuplicate) {
+                                    isSendingGuestRequest = false;
+                                    if (typeof showMiniAlert !== 'undefined') {
+                                        showMiniAlert('⚠️ تم إرسال هذا الطلب مسبقاً', 'warning');
+                                    }
+                                    return;
+                                }
+                            }
+                            // متابعة الإرسال
+                            proceedWithSending();
+                        })
+                        .catch(e => {
+                            console.error('Error checking duplicate maintenance:', e);
+                            // في حالة الخطأ، متابعة الإرسال
+                            proceedWithSending();
+                        });
+                } else {
+                    proceedWithSending();
+                }
+            } else {
+                proceedWithSending();
             }
+            
+            function proceedWithSending() {
+                // ✅ تحديد حالة الإرسال
+                isSendingGuestRequest = true;
             
             // إرسال إلى Firebase
             if (typeof db !== 'undefined' && db) {
@@ -8898,6 +11227,11 @@ function renderMaintenanceCards() {
                 
                 db.collection(collectionName).add(payload)
                     .then(() => {
+                            // ✅ إعادة تعيين حالة الإرسال بعد 2 ثانية
+                            setTimeout(() => {
+                                isSendingGuestRequest = false;
+                            }, 2000);
+                            
                         toggleSyncIndicator(false);
                         if (typeof showMiniAlert !== 'undefined') {
                             showMiniAlert('✅ تم إرسال الطلب بنجاح', 'success');
@@ -8910,6 +11244,8 @@ function renderMaintenanceCards() {
                         }
                     })
                     .catch(e => {
+                            // ✅ إعادة تعيين حالة الإرسال في حالة الخطأ
+                            isSendingGuestRequest = false;
                         console.error('Error sending guest request:', e);
                         toggleSyncIndicator(false);
                         if (typeof showMiniAlert !== 'undefined') {
@@ -8919,6 +11255,9 @@ function renderMaintenanceCards() {
                         }
                     });
             } else {
+                    // ✅ إعادة تعيين حالة الإرسال
+                    isSendingGuestRequest = false;
+                    
                 // Fallback: حفظ محلياً
                 const pending = JSON.parse(localStorage.getItem('guest_pending') || '[]');
                 pending.push({
@@ -8931,6 +11270,7 @@ function renderMaintenanceCards() {
                     showMiniAlert('✅ تم حفظ الطلب محلياً (غير متصل)', 'success');
                 } else {
                     alert('✅ تم حفظ الطلب محلياً (غير متصل)');
+                    }
                 }
             }
         }
@@ -8939,18 +11279,51 @@ function renderMaintenanceCards() {
         // == لوحة تحكم بوابة النزيل (Guest Portal Manager) ===
         // ===============================================
         
-        let currentGuestPortalTab = 'design';
+        // ✅ تعريف المتغيرات في window أولاً لتجنب مشاكل التهيئة
+        if (!window.currentGuestPortalTab) {
+            window.currentGuestPortalTab = 'design';
+        }
+        let currentGuestPortalTab = window.currentGuestPortalTab;
         
         function showGuestPortalManager() {
+            if (typeof toggleSideMenu === 'function') {
             toggleSideMenu();
+            }
             const modal = document.getElementById('guest-portal-manager-modal');
-            if (!modal) return;
+            if (!modal) {
+                console.error('guest-portal-manager-modal not found');
+                return;
+            }
             
             modal.style.display = 'flex';
             loadGuestPortalSettings();
             renderTabsList();
             // renderFNBList تم دمجه في MenuManager
-            loadQRTemplates();
+            
+            // ✅ إضافة event listeners لمؤشرات 24 ساعة
+            const maintenance24hEl = document.getElementById('gpm-maintenance-24h');
+            const maintenanceHoursContainer = document.getElementById('gpm-maintenance-hours-container');
+            if (maintenance24hEl && maintenanceHoursContainer) {
+                maintenance24hEl.addEventListener('change', function() {
+                    maintenanceHoursContainer.style.display = this.checked ? 'none' : 'grid';
+                });
+            }
+            
+            const requests24hEl = document.getElementById('gpm-requests-24h');
+            const requestsHoursContainer = document.getElementById('gpm-requests-hours-container');
+            if (requests24hEl && requestsHoursContainer) {
+                requests24hEl.addEventListener('change', function() {
+                    requestsHoursContainer.style.display = this.checked ? 'none' : 'grid';
+                });
+            }
+            
+            const fnb24hEl = document.getElementById('gpm-fnb-24h');
+            const fnbHoursContainer = document.getElementById('gpm-fnb-hours-container');
+            if (fnb24hEl && fnbHoursContainer) {
+                fnb24hEl.addEventListener('change', function() {
+                    fnbHoursContainer.style.display = this.checked ? 'none' : 'grid';
+                });
+            }
             
             // إعادة تعيين حقول QR
             const qrFrom = document.getElementById('gpm-qr-from');
@@ -8960,42 +11333,192 @@ function renderMaintenanceCards() {
             const qrPreview = document.getElementById('gpm-qr-preview-area');
             if (qrPreview) qrPreview.innerHTML = '';
             
-            // إظهار معاينة اللوجو
+            // تحديث عدد الغرف تلقائياً
+            const countPreview = document.getElementById('qr-count-preview');
+            if (countPreview) countPreview.textContent = '0';
+            
+            // إضافة مستمعات لتحديث عدد الغرف تلقائياً
+            if (qrFrom && qrTo && countPreview) {
+                const updateCount = () => {
+                    const from = parseInt(qrFrom.value) || 0;
+                    const to = parseInt(qrTo.value) || 0;
+                    const count = (from && to && to >= from) ? (to - from + 1) : 0;
+                    countPreview.textContent = count;
+                };
+                // إضافة مستمعات جديدة
+                qrFrom.addEventListener('input', updateCount);
+                qrTo.addEventListener('input', updateCount);
+                // تحديث فوري
+                updateCount();
+            }
+            
+            // ✅ إضافة معاينة مباشرة لجميع إعدادات التصميم
+            setupDesignPreview();
+        }
+        
+        // ✅ دالة لإعداد معاينة مباشرة لإعدادات التصميم
+        function setupDesignPreview() {
+            // معاينة اللوجو
             const logoInput = document.getElementById('gpm-logo');
             if (logoInput) {
                 logoInput.addEventListener('input', function() {
                     const preview = document.getElementById('gpm-logo-preview');
                     if (preview && this.value) {
-                        preview.innerHTML = `<img src="${this.value}" alt="Logo Preview" style="max-width: 100px; max-height: 100px; border-radius: 8px; border: 2px solid var(--border-color);">`;
+                        preview.innerHTML = `<img src="${this.value}" alt="Logo Preview" style="max-width: 150px; max-height: 150px; border-radius: 12px; border: 2px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.1);" onerror="this.parentElement.innerHTML='<div style=\\'color: var(--text-sec); padding: 20px;\\'>⚠️ رابط غير صالح</div>';">`;
                     } else if (preview) {
                         preview.innerHTML = '';
                     }
                 });
             }
             
-            // إظهار/إخفاء قسم لوجو QR
-            const qrLogoEnabled = document.getElementById('gpm-qr-logo-enabled');
-            const qrLogoSection = document.getElementById('gpm-qr-logo-section');
-            if (qrLogoEnabled && qrLogoSection) {
-                qrLogoEnabled.addEventListener('change', function() {
-                    qrLogoSection.style.display = this.checked ? 'block' : 'none';
+            // معاينة صورة الخلفية
+            const bgImageInput = document.getElementById('gpm-bg-image');
+            if (bgImageInput) {
+                bgImageInput.addEventListener('input', function() {
+                    const preview = document.getElementById('gpm-bg-image-preview');
+                    if (preview && this.value) {
+                        preview.innerHTML = `<img src="${this.value}" alt="Background Preview" style="max-width: 100%; max-height: 150px; border-radius: 12px; border: 2px solid var(--border-color);" onerror="this.parentElement.innerHTML='<div style=\\'color: var(--text-sec); padding: 20px;\\'>⚠️ رابط غير صالح</div>';">`;
+                    } else if (preview) {
+                        preview.innerHTML = '';
+                    }
                 });
             }
+            
+            // ✅ معاينة مباشرة للألوان والخلفية
+            const bgColorInput = document.getElementById('gpm-bg-color');
+            const primaryColorInput = document.getElementById('gpm-primary-color');
+            const previewContainer = document.getElementById('gpm-design-preview');
+            
+            // إنشاء حاوية معاينة إذا لم تكن موجودة
+            if (!previewContainer) {
+                const designTab = document.getElementById('gpm-content-design');
+                if (designTab) {
+                    const previewDiv = document.createElement('div');
+                    previewDiv.id = 'gpm-design-preview';
+                    previewDiv.style.cssText = `
+                        background: var(--bg-card);
+                        padding: 20px;
+                        border-radius: 12px;
+                        margin-top: 20px;
+                        border: 2px solid var(--border-color);
+                        min-height: 200px;
+                        position: relative;
+                        overflow: hidden;
+                    `;
+                    designTab.appendChild(previewDiv);
+                }
+            }
+            
+            // دالة لتحديث المعاينة
+            const updatePreview = () => {
+                const preview = document.getElementById('gpm-design-preview');
+                if (!preview) return;
+                
+                const bgColor = bgColorInput ? bgColorInput.value : '#E3E8FF';
+                const primaryColor = primaryColorInput ? primaryColorInput.value : '#00ACC1';
+                const bgImage = bgImageInput ? bgImageInput.value : '';
+                const logoUrl = logoInput ? logoInput.value : '';
+                const title = document.getElementById('gpm-title') ? document.getElementById('gpm-title').value : 'أهلاً بك';
+                const subtitle = document.getElementById('gpm-subtitle') ? document.getElementById('gpm-subtitle').value : 'خدمة الغرفة السريعة';
+                
+                // تطبيق الخلفية
+                if (bgImage) {
+                    preview.style.background = `url(${bgImage}) center/cover, ${bgColor}`;
+                } else {
+                    preview.style.background = bgColor;
+                }
+                
+                // إنشاء محتوى المعاينة
+                preview.innerHTML = `
+                    <div style="text-align: center; padding: 20px; color: var(--text-main);">
+                        ${logoUrl ? `<img src="${logoUrl}" alt="Logo" style="max-width: 80px; max-height: 80px; margin-bottom: 15px; border-radius: 8px; border: 2px solid rgba(255,255,255,0.3);" onerror="this.style.display='none';">` : '<div style="font-size: 3rem; margin-bottom: 15px;">🏨</div>'}
+                        <h3 style="margin: 0 0 10px 0; color: ${primaryColor}; font-size: 1.5rem; font-weight: 700;">${title}</h3>
+                        <p style="margin: 0; font-size: 1rem; opacity: 0.8;">${subtitle}</p>
+                        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+                            <div style="background: ${primaryColor}; color: white; padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;">تبويب 1</div>
+                            <div style="background: rgba(255,255,255,0.3); color: var(--text-main); padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;">تبويب 2</div>
+                            <div style="background: rgba(255,255,255,0.3); color: var(--text-main); padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;">تبويب 3</div>
+                        </div>
+                    </div>
+                    <div style="position: absolute; bottom: 10px; right: 10px; font-size: 0.75rem; color: rgba(255,255,255,0.7); background: rgba(0,0,0,0.3); padding: 4px 8px; border-radius: 6px;">
+                        معاينة مباشرة
+                    </div>
+                `;
+            };
+            
+            // إضافة مستمعات للتحديث المباشر
+            if (bgColorInput) {
+                bgColorInput.addEventListener('input', updatePreview);
+                bgColorInput.addEventListener('change', updatePreview);
+            }
+            if (primaryColorInput) {
+                primaryColorInput.addEventListener('input', updatePreview);
+                primaryColorInput.addEventListener('change', updatePreview);
+            }
+            if (bgImageInput) {
+                bgImageInput.addEventListener('input', updatePreview);
+            }
+            if (logoInput) {
+                logoInput.addEventListener('input', updatePreview);
+            }
+            const titleInput = document.getElementById('gpm-title');
+            if (titleInput) {
+                titleInput.addEventListener('input', updatePreview);
+            }
+            const subtitleInput = document.getElementById('gpm-subtitle');
+            if (subtitleInput) {
+                subtitleInput.addEventListener('input', updatePreview);
+            }
+            
+            // تحديث المعاينة فوراً
+            setTimeout(updatePreview, 100);
         }
         
         function switchGuestPortalTab(tab) {
+            if (!window.currentGuestPortalTab) {
+                window.currentGuestPortalTab = 'design';
+            }
             currentGuestPortalTab = tab;
+            window.currentGuestPortalTab = tab; // ✅ تحديث المتغير العام
             
             // تحديث التبويبات
             document.querySelectorAll('.gpm-tab-content').forEach(content => {
                 content.style.display = 'none';
             });
+            
+            // تحديث أزرار التبويبات مع تحسين التصميم
             document.querySelectorAll('.add-mode-tab').forEach(btn => {
                 btn.classList.remove('active');
+                // إعادة تعيين التصميم الافتراضي
+                btn.style.background = 'white';
+                btn.style.color = 'var(--text-main)';
+                btn.style.border = '2px solid var(--border-color)';
             });
             
-            document.getElementById(`gpm-content-${tab}`).style.display = 'block';
-            document.getElementById(`gpm-tab-${tab}`).classList.add('active');
+            // تفعيل التبويب المحدد
+            const activeTab = document.getElementById(`gpm-tab-${tab}`);
+            if (activeTab) {
+                activeTab.classList.add('active');
+                activeTab.style.background = 'linear-gradient(135deg, var(--primary), #6366F1)';
+                activeTab.style.color = 'white';
+                activeTab.style.border = 'none';
+                activeTab.style.boxShadow = '0 4px 12px rgba(59,130,246,0.3)';
+            }
+            
+            // إظهار المحتوى - دعم التبويبات القديمة والجديدة
+            let contentId = `gpm-content-${tab}`;
+            // دعم التبويبات القديمة (tabs, links) للتوافق
+            if (tab === 'content') {
+                // لا يوجد محتوى قديم، المحتوى الجديد موجود
+            } else if (tab === 'tabs' || tab === 'links') {
+                // إعادة توجيه للتبويب الموحد
+                contentId = 'gpm-content-content';
+            }
+            
+            const content = document.getElementById(contentId);
+            if (content) {
+                content.style.display = 'block';
+            }
         }
         
         function loadGuestPortalSettings() {
@@ -9004,26 +11527,160 @@ function renderMaintenanceCards() {
                 if (saved) {
                     const config = JSON.parse(saved);
                     
-                    if (config.bgColor) document.getElementById('gpm-bg-color').value = config.bgColor;
-                    if (config.bgImage) document.getElementById('gpm-bg-image').value = config.bgImage;
-                    if (config.logo) document.getElementById('gpm-logo').value = config.logo;
-                    if (config.title) document.getElementById('gpm-title').value = config.title;
-                    if (config.subtitle) document.getElementById('gpm-subtitle').value = config.subtitle;
-                    if (config.theme) document.getElementById('gpm-theme').value = config.theme;
-                    if (config.primaryColor) document.getElementById('gpm-primary-color').value = config.primaryColor;
-                    if (config.googleReviewUrl) document.getElementById('gpm-google-review').value = config.googleReviewUrl;
-                    if (config.quickWhatsapp) document.getElementById('gpm-whatsapp-manager').value = config.quickWhatsapp;
-                    if (config.kitchenWhatsapp) document.getElementById('gpm-whatsapp-kitchen').value = config.kitchenWhatsapp;
-                    if (config.receptionPhone) document.getElementById('gpm-reception-phone').value = config.receptionPhone;
-                    if (config.welcomeMessage) document.getElementById('gpm-welcome-message').value = config.welcomeMessage;
-                    if (config.qrSize) document.getElementById('gpm-qr-size').value = config.qrSize;
-                    if (config.qrColumns) document.getElementById('gpm-qr-columns').value = config.qrColumns;
-                    if (config.qrLogoEnabled) document.getElementById('gpm-qr-logo-enabled').checked = config.qrLogoEnabled;
-                    if (config.qrLogoUrl) document.getElementById('gpm-qr-logo-url').value = config.qrLogoUrl;
+                    // ✅ فحص وجود العناصر قبل تعيين القيم - استخدام المسارات الصحيحة
+                    const bgColorEl = document.getElementById('gpm-bg-color');
+                    if (bgColorEl) {
+                        bgColorEl.value = (config.theme && config.theme.bgColor) ? config.theme.bgColor : '#E3E8FF';
+                    }
+                    
+                    const bgImageEl = document.getElementById('gpm-bg-image');
+                    if (bgImageEl) {
+                        bgImageEl.value = (config.theme && config.theme.bgImage) ? config.theme.bgImage : '';
+                        // إظهار معاينة صورة الخلفية
+                        if (config.theme && config.theme.bgImage) {
+                            const preview = document.getElementById('gpm-bg-image-preview');
+                            if (preview) {
+                                preview.innerHTML = `<img src="${config.theme.bgImage}" alt="Background Preview" style="max-width: 100%; max-height: 150px; border-radius: 12px; border: 2px solid var(--border-color);">`;
+                            }
+                        }
+                    }
+                    
+                    const logoEl = document.getElementById('gpm-logo');
+                    if (logoEl) {
+                        logoEl.value = config.logoUrl || '';
+                        // إظهار معاينة اللوجو
+                        if (config.logoUrl) {
+                            const preview = document.getElementById('gpm-logo-preview');
+                            if (preview) {
+                                preview.innerHTML = `<img src="${config.logoUrl}" alt="Logo Preview" style="max-width: 150px; max-height: 150px; border-radius: 12px; border: 2px solid var(--border-color); box-shadow: 0 4px 12px rgba(0,0,0,0.1);">`;
+                            }
+                        }
+                    }
+                    
+                    const titleEl = document.getElementById('gpm-title');
+                    if (titleEl) {
+                        titleEl.value = config.guestHeaderTitle || 'أهلاً بك في منظومة Adora';
+                    }
+                    
+                    const subtitleEl = document.getElementById('gpm-subtitle');
+                    if (subtitleEl) {
+                        subtitleEl.value = config.guestHeaderSubtitle || 'خدمة الغرفة السريعة';
+                    }
+                    
+                    const themeEl = document.getElementById('gpm-theme');
+                    if (themeEl) {
+                        themeEl.value = (config.theme && config.theme.themeType) ? config.theme.themeType : 'light';
+                    }
+                    
+                    const primaryColorEl = document.getElementById('gpm-primary-color');
+                    if (primaryColorEl) {
+                        primaryColorEl.value = (config.theme && config.theme.primaryColor) ? config.theme.primaryColor : '#00ACC1';
+                    }
+                    
+                    const googleReviewEl = document.getElementById('gpm-google-review');
+                    if (googleReviewEl && config.googleReviewUrl) googleReviewEl.value = config.googleReviewUrl;
+                    
+                    const whatsappManagerEl = document.getElementById('gpm-whatsapp-manager');
+                    if (whatsappManagerEl && config.quickWhatsapp) whatsappManagerEl.value = config.quickWhatsapp;
+                    
+                    const kitchenWhatsappEl = document.getElementById('gpm-whatsapp-kitchen');
+                    if (kitchenWhatsappEl && config.kitchenWhatsapp) kitchenWhatsappEl.value = config.kitchenWhatsapp;
+                    
+                    const receptionPhoneEl = document.getElementById('gpm-reception-phone');
+                    if (receptionPhoneEl && config.receptionPhone) receptionPhoneEl.value = config.receptionPhone;
+                    
+                    const welcomeMessageEl = document.getElementById('gpm-welcome-message');
+                    if (welcomeMessageEl && config.welcomeMessage) welcomeMessageEl.value = config.welcomeMessage;
+                    
+                    // ✅ تحميل إعدادات الأوقات
+                    const cleaningCooldownEl = document.getElementById('gpm-cleaning-cooldown');
+                    if (cleaningCooldownEl) {
+                        cleaningCooldownEl.value = (config.requestCooldowns && config.requestCooldowns.cleaning) ? config.requestCooldowns.cleaning : 12;
+                    }
+                    
+                    // أوقات العمل للنظافة
+                    const cleaningFromEl = document.getElementById('gpm-cleaning-from');
+                    const cleaningToEl = document.getElementById('gpm-cleaning-to');
+                    if (cleaningFromEl && config.requestCooldowns && config.requestCooldowns.cleaningFrom) {
+                        cleaningFromEl.value = config.requestCooldowns.cleaningFrom;
+                    }
+                    if (cleaningToEl && config.requestCooldowns && config.requestCooldowns.cleaningTo) {
+                        cleaningToEl.value = config.requestCooldowns.cleaningTo;
+                    }
+                    
+                    // أوقات العمل للصيانة + مؤشر 24 ساعة
+                    const maintenanceFromEl = document.getElementById('gpm-maintenance-from');
+                    const maintenanceToEl = document.getElementById('gpm-maintenance-to');
+                    const maintenance24hEl = document.getElementById('gpm-maintenance-24h');
+                    const maintenanceHoursContainer = document.getElementById('gpm-maintenance-hours-container');
+                    if (maintenanceFromEl && config.requestCooldowns && config.requestCooldowns.maintenanceFrom) {
+                        maintenanceFromEl.value = config.requestCooldowns.maintenanceFrom;
+                    }
+                    if (maintenanceToEl && config.requestCooldowns && config.requestCooldowns.maintenanceTo) {
+                        maintenanceToEl.value = config.requestCooldowns.maintenanceTo;
+                    }
+                    if (maintenance24hEl) {
+                        maintenance24hEl.checked = (config.requestCooldowns && config.requestCooldowns.maintenance24h) || false;
+                        if (maintenanceHoursContainer) {
+                            maintenanceHoursContainer.style.display = maintenance24hEl.checked ? 'none' : 'grid';
+                        }
+                    }
+                    
+                    // أوقات العمل للطلبات + مؤشر 24 ساعة
+                    const requestsFromEl = document.getElementById('gpm-requests-from');
+                    const requestsToEl = document.getElementById('gpm-requests-to');
+                    const requests24hEl = document.getElementById('gpm-requests-24h');
+                    const requestsHoursContainer = document.getElementById('gpm-requests-hours-container');
+                    if (requestsFromEl && config.requestCooldowns && config.requestCooldowns.requestsFrom) {
+                        requestsFromEl.value = config.requestCooldowns.requestsFrom;
+                    }
+                    if (requestsToEl && config.requestCooldowns && config.requestCooldowns.requestsTo) {
+                        requestsToEl.value = config.requestCooldowns.requestsTo;
+                    }
+                    if (requests24hEl) {
+                        requests24hEl.checked = (config.requestCooldowns && config.requestCooldowns.requests24h) || false;
+                        if (requestsHoursContainer) {
+                            requestsHoursContainer.style.display = requests24hEl.checked ? 'none' : 'grid';
+                        }
+                    }
+                    
+                    // أوقات العمل للكافي شوب + مؤشر 24 ساعة
+                    const fnbFromEl = document.getElementById('gpm-fnb-from');
+                    const fnbToEl = document.getElementById('gpm-fnb-to');
+                    const fnb24hEl = document.getElementById('gpm-fnb-24h');
+                    const fnbHoursContainer = document.getElementById('gpm-fnb-hours-container');
+                    if (fnbFromEl && config.requestCooldowns && config.requestCooldowns.fnbFrom) {
+                        fnbFromEl.value = config.requestCooldowns.fnbFrom;
+                    }
+                    if (fnbToEl && config.requestCooldowns && config.requestCooldowns.fnbTo) {
+                        fnbToEl.value = config.requestCooldowns.fnbTo;
+                    }
+                    if (fnb24hEl) {
+                        fnb24hEl.checked = (config.requestCooldowns && config.requestCooldowns.fnb24h) || false;
+                        if (fnbHoursContainer) {
+                            fnbHoursContainer.style.display = fnb24hEl.checked ? 'none' : 'grid';
+                        }
+                    }
+                    
+                    const qrSizeEl = document.getElementById('gpm-qr-size');
+                    if (qrSizeEl && config.qrSize) qrSizeEl.value = config.qrSize;
+                    
+                    const qrColumnsEl = document.getElementById('gpm-qr-columns');
+                    if (qrColumnsEl && config.qrColumns) qrColumnsEl.value = config.qrColumns;
+                    
+                    // ✅ فحص وجود عناصر QR Logo (قد لا تكون موجودة بعد التبسيط)
+                    const qrLogoEnabledEl = document.getElementById('gpm-qr-logo-enabled');
+                    if (qrLogoEnabledEl && config.qrLogoEnabled !== undefined) {
+                        qrLogoEnabledEl.checked = config.qrLogoEnabled;
+                    }
+                    
+                    const qrLogoUrlEl = document.getElementById('gpm-qr-logo-url');
+                    if (qrLogoUrlEl && config.qrLogoUrl) qrLogoUrlEl.value = config.qrLogoUrl;
                     
                     // إظهار قسم لوجو QR إذا كان مفعلاً
-                    if (config.qrLogoEnabled) {
-                        document.getElementById('gpm-qr-logo-section').style.display = 'block';
+                    const qrLogoSectionEl = document.getElementById('gpm-qr-logo-section');
+                    if (qrLogoSectionEl && config.qrLogoEnabled) {
+                        qrLogoSectionEl.style.display = 'block';
                     }
                 }
             } catch(e) {
@@ -9367,31 +12024,81 @@ function renderMaintenanceCards() {
             showLoadingBar();
             
             try {
-                // جمع الإعدادات
+                // ✅ جمع الإعدادات مع فحص وجود العناصر
+                const getElementValue = (id, defaultValue = '') => {
+                    const el = document.getElementById(id);
+                    return el ? el.value : defaultValue;
+                };
+                
+                const getElementChecked = (id, defaultValue = false) => {
+                    const el = document.getElementById(id);
+                    return (el && el.type === 'checkbox') ? el.checked : defaultValue;
+                };
+                
+                const getElementInt = (id, defaultValue = 0) => {
+                    const el = document.getElementById(id);
+                    return el ? parseInt(el.value) || defaultValue : defaultValue;
+                };
+                
+                // ✅ استخراج رابط Google Review من رابط خرائط جوجل
+                let googleReviewUrl = getElementValue('gpm-google-review', '');
+                if (googleReviewUrl) {
+                    try {
+                        // محاولة توسيع الرابط المختصر
+                        let expandedUrl = await expandUrlIfShort(googleReviewUrl);
+                        if (!expandedUrl) expandedUrl = googleReviewUrl;
+                        
+                        // استخراج رابط التقييم من رابط خرائط جوجل
+                        const placeIdMatch = expandedUrl.match(/place_id=([^&]+)/) || expandedUrl.match(/place\/([^\/]+)/);
+                        if (placeIdMatch) {
+                            const placeId = placeIdMatch[1];
+                            googleReviewUrl = `https://search.google.com/local/writereview?placeid=${placeId}`;
+                        } else if (expandedUrl.includes('g.page/r/')) {
+                            // إذا كان الرابط من نوع g.page/r/، استخدمه مباشرة
+                            googleReviewUrl = expandedUrl;
+                        }
+                    } catch (e) {
+                        console.warn('Error extracting Google Review URL:', e);
+                        // في حالة الخطأ، استخدم الرابط الأصلي
+                    }
+                }
+                
                 const config = {
-                    siteTitle: document.getElementById('gpm-title').value || 'بوابة النزيل',
-                    guestHeaderTitle: document.getElementById('gpm-title').value || 'أهلاً بك',
-                    guestHeaderSubtitle: document.getElementById('gpm-subtitle').value || 'خدمة الغرفة السريعة',
-                    logoUrl: document.getElementById('gpm-logo').value || '',
+                    siteTitle: getElementValue('gpm-title', 'بوابة النزيل'),
+                    guestHeaderTitle: getElementValue('gpm-title', 'أهلاً بك'),
+                    guestHeaderSubtitle: getElementValue('gpm-subtitle', 'خدمة الغرفة السريعة'),
+                    logoUrl: getElementValue('gpm-logo', ''),
                     theme: {
-                        primaryColor: document.getElementById('gpm-primary-color').value || '#00ACC1',
+                        primaryColor: getElementValue('gpm-primary-color', '#00ACC1'),
                         accentColor: '#F0F4FF',
-                        bgColor: document.getElementById('gpm-bg-color').value || '#E3E8FF',
-                        bgImage: document.getElementById('gpm-bg-image').value || '',
+                        bgColor: getElementValue('gpm-bg-color', '#E3E8FF'),
+                        bgImage: getElementValue('gpm-bg-image', ''),
                         textColor: '#1E293B',
-                        themeType: document.getElementById('gpm-theme').value || 'light'
+                        themeType: getElementValue('gpm-theme', 'light')
                     },
                     guestTabs: getTabsConfig(),
-                    quickWhatsapp: document.getElementById('gpm-whatsapp-manager').value || '',
-                    googleReviewUrl: document.getElementById('gpm-google-review').value || '',
-                    kitchenWhatsapp: document.getElementById('gpm-whatsapp-kitchen').value || '',
-                    receptionPhone: document.getElementById('gpm-reception-phone').value || '',
-                    welcomeMessage: document.getElementById('gpm-welcome-message').value || '',
+                    quickWhatsapp: getElementValue('gpm-whatsapp-manager', ''),
+                    googleReviewUrl: googleReviewUrl,
+                    kitchenWhatsapp: getElementValue('gpm-whatsapp-kitchen', ''),
+                    receptionPhone: getElementValue('gpm-reception-phone', ''),
+                    welcomeMessage: getElementValue('gpm-welcome-message', ''),
                     fnbItems: getFNBItems(),
-                    qrSize: parseInt(document.getElementById('gpm-qr-size').value) || 160,
-                    qrColumns: parseInt(document.getElementById('gpm-qr-columns').value) || 3,
-                    qrLogoEnabled: document.getElementById('gpm-qr-logo-enabled').checked || false,
-                    qrLogoUrl: document.getElementById('gpm-qr-logo-url').value || '',
+                    qrSize: getElementInt('gpm-qr-size', 160),
+                    qrColumns: getElementInt('gpm-qr-columns', 3),
+                    qrLogoEnabled: getElementChecked('gpm-qr-logo-enabled', false),
+                    qrLogoUrl: getElementValue('gpm-qr-logo-url', ''),
+                    requestCooldowns: {
+                        cleaning: parseFloat(getElementValue('gpm-cleaning-cooldown', '12')) || 12,
+                        maintenanceFrom: getElementValue('gpm-maintenance-from', '08:00'),
+                        maintenanceTo: getElementValue('gpm-maintenance-to', '22:00'),
+                        maintenance24h: document.getElementById('gpm-maintenance-24h') ? document.getElementById('gpm-maintenance-24h').checked : false,
+                        requestsFrom: getElementValue('gpm-requests-from', '08:00'),
+                        requestsTo: getElementValue('gpm-requests-to', '22:00'),
+                        requests24h: document.getElementById('gpm-requests-24h') ? document.getElementById('gpm-requests-24h').checked : false,
+                        fnbFrom: getElementValue('gpm-fnb-from', '08:00'),
+                        fnbTo: getElementValue('gpm-fnb-to', '22:00'),
+                        fnb24h: document.getElementById('gpm-fnb-24h') ? document.getElementById('gpm-fnb-24h').checked : false
+                    },
                     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
                 };
                 
@@ -9459,45 +12166,186 @@ function renderMaintenanceCards() {
                     await db.collection('hotel_settings').doc(hotelId).set(config, { merge: true });
                     
                     // حفظ نسخة في التاريخ (اختياري)
+                    try {
                     await db.collection('hotel_settings').doc(hotelId).collection('history').add({
                         ...config,
                         savedAt: firebase.firestore.FieldValue.serverTimestamp(),
                         savedBy: 'admin'
                     });
+                    } catch (e) {
+                        console.warn('Error saving history:', e);
+                        // لا نوقف العملية إذا فشل حفظ التاريخ
+                    }
                     
-                    showMiniAlert('✅ تم حفظ الإعدادات بنجاح', 'success');
+                    // ✅ رسالة نجاح مفصلة
+                    const savedFields = [];
+                    if (config.theme.bgColor || config.theme.bgImage) savedFields.push('🎨 التصميم');
+                    if (config.logoUrl) savedFields.push('🖼️ الشعار');
+                    if (config.guestHeaderTitle || config.guestHeaderSubtitle) savedFields.push('📝 العناوين');
+                    if (config.guestTabs && config.guestTabs.length > 0) savedFields.push('📋 التبويبات');
+                    if (config.googleReviewUrl || config.quickWhatsapp || config.kitchenWhatsapp || config.receptionPhone) savedFields.push('🔗 الروابط');
+                    if (config.welcomeMessage) savedFields.push('💬 رسالة الترحيب');
+                    if (config.fnbItems && config.fnbItems.length > 0) savedFields.push('🍽️ الأغذية والمشروبات');
+                    
+                    showMiniAlert(`✅ تم حفظ الإعدادات بنجاح!\n${savedFields.length > 0 ? 'تم حفظ: ' + savedFields.join(' • ') : ''}`, 'success');
                     playNotificationSound();
                 } else {
                     showMiniAlert('✅ تم حفظ الإعدادات محلياً', 'success');
                 }
             } catch(e) {
                 console.error('Error saving settings:', e);
-                showMiniAlert('❌ فشل حفظ الإعدادات', 'error');
+                showMiniAlert(`❌ فشل حفظ الإعدادات: ${e.message || 'خطأ غير معروف'}`, 'error');
             } finally {
                 toggleSyncIndicator(false);
                 hideLoadingBar();
             }
         }
         
+        // ✅ دالة لتعديل اسم التبويب
+        function editTabTitle(tabId) {
+            const tabItem = document.querySelector(`.gpm-tab-item[data-tab-id="${tabId}"]`);
+            if (!tabItem) return;
+            
+            const titleDisplay = tabItem.querySelector('.gpm-tab-title-display');
+            const titleInput = tabItem.querySelector('.gpm-tab-title-input');
+            
+            if (!titleDisplay || !titleInput) return;
+            
+            // إظهار حقل الإدخال وإخفاء النص
+            titleDisplay.style.display = 'none';
+            titleInput.style.display = 'block';
+            titleInput.value = titleDisplay.textContent;
+            titleInput.focus();
+            titleInput.select();
+            
+            // حفظ عند الضغط Enter أو فقدان التركيز
+            const saveTitle = () => {
+                const newTitle = titleInput.value.trim();
+                if (newTitle) {
+                    titleDisplay.textContent = newTitle;
+                }
+                titleDisplay.style.display = 'block';
+                titleInput.style.display = 'none';
+            };
+            
+            titleInput.onblur = saveTitle;
+            titleInput.onkeypress = (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveTitle();
+                } else if (e.key === 'Escape') {
+                    titleInput.value = titleDisplay.textContent;
+                    titleDisplay.style.display = 'block';
+                    titleInput.style.display = 'none';
+                }
+            };
+        }
+        
+        window.editTabTitle = editTabTitle;
+        
         function getTabsConfig() {
-            // جمع إعدادات التبويبات من الواجهة
+            // ✅ جمع إعدادات التبويبات من الواجهة (visible, url, title)
             const tabs = [];
             document.querySelectorAll('.gpm-tab-item').forEach(item => {
+                const tabId = item.dataset.tabId;
+                const visibleEl = item.querySelector('.gpm-tab-visible');
                 const urlInput = item.querySelector('.gpm-tab-url');
+                const titleDisplay = item.querySelector('.gpm-tab-title-display');
+                const titleInput = item.querySelector('.gpm-tab-title-input');
+                
+                // ✅ التحقق من وجود العناصر قبل الوصول إليها
+                if (!visibleEl) {
+                    console.warn('Missing visible element for tab:', tabId);
+                    return;
+                }
+                
+                // ✅ الحصول على بيانات التبويب الافتراضية
+                const defaultTabs = [
+                    { id: 'cleaning', title: '🧹 تنظيف الغرفة', icon: '🧹', type: 'form', order: 1 },
+                    { id: 'checkout', title: '🧳 طلب حامل حقائب للمغادرة', icon: '🧳', type: 'checkout', order: 2 },
+                    { id: 'requests', title: '🧴 طلبات تجهيز (شامبو، صابون…)', icon: '🧴', type: 'form', order: 3 },
+                    { id: 'maintenance', title: '🛠️ الدعم الفني والصيانة الطارئة', icon: '🛠️', type: 'form', order: 4 },
+                    { id: 'fnb', title: '🍽️ ضيافة الطعام', icon: '🍽️', type: 'fnb', order: 5 },
+                    { id: 'food', title: '🍕 طلبات المأكولات', icon: '🍕', type: 'whatsapp', order: 6 },
+                    { id: 'offers', title: '🎁 عروض حصرية', icon: '🎁', type: 'link', order: 7 },
+                    { id: 'review', title: '⭐ شارك تجربتك', icon: '⭐', type: 'link', order: 8 },
+                    { id: 'contact', title: '💬 تواصل مباشر', icon: '💬', type: 'whatsapp', order: 9 }
+                ];
+                
+                const defaultTab = defaultTabs.find(t => t.id === tabId);
+                if (!defaultTab) return; // تخطي التبويبات غير الافتراضية
+                
+                // ✅ استخدام العنوان المعدل من display أو input
+                let tabTitle = defaultTab.title;
+                if (titleDisplay && titleDisplay.textContent.trim()) {
+                    tabTitle = titleDisplay.textContent.trim();
+                } else if (titleInput && titleInput.value.trim()) {
+                    tabTitle = titleInput.value.trim();
+                }
+                
                 tabs.push({
-                    id: item.dataset.tabId,
-                    title: item.querySelector('.gpm-tab-title').value,
-                    icon: item.querySelector('.gpm-tab-icon').value,
-                    type: item.querySelector('.gpm-tab-type').value,
-                    visible: item.querySelector('.gpm-tab-visible').checked,
-                    order: parseInt(item.dataset.order) || 0,
+                    id: tabId,
+                    title: tabTitle,
+                    icon: defaultTab.icon,
+                    type: defaultTab.type,
+                    visible: visibleEl.checked !== false, // افتراضي true
+                    order: defaultTab.order,
                     url: urlInput ? urlInput.value.trim() : ''
                 });
             });
             return tabs;
         }
         
-        window.toggleTabUrlField = function(selectElement) {
+        // ✅ دالة لاستخراج رابط التقييم من رابط خرائط جوجل
+        async function extractGoogleReviewUrl(inputElement) {
+            const url = inputElement.value.trim();
+            if (!url || !url.includes('google.com') && !url.includes('maps.google') && !url.includes('g.page')) {
+                return;
+            }
+            
+            try {
+                // محاولة توسيع الرابط المختصر
+                let expandedUrl = await expandUrlIfShort(url);
+                if (!expandedUrl) expandedUrl = url;
+                
+                // استخراج رابط التقييم من رابط خرائط جوجل
+                // رابط التقييم عادة يكون: https://search.google.com/local/writereview?placeid=...
+                // أو: https://g.page/r/...
+                
+                // محاولة استخراج place_id من الرابط
+                const placeIdMatch = expandedUrl.match(/place_id=([^&]+)/) || expandedUrl.match(/place\/([^\/]+)/);
+                if (placeIdMatch) {
+                    const placeId = placeIdMatch[1];
+                    const reviewUrl = `https://search.google.com/local/writereview?placeid=${placeId}`;
+                    inputElement.value = reviewUrl;
+                    showMiniAlert('✅ تم استخراج رابط التقييم تلقائياً', 'success');
+                    return;
+                }
+                
+                // محاولة استخراج رابط g.page
+                const gPageMatch = expandedUrl.match(/g\.page\/r\/([^\/\?]+)/);
+                if (gPageMatch) {
+                    const pageId = gPageMatch[1];
+                    const reviewUrl = `https://g.page/r/${pageId}/review`;
+                    inputElement.value = reviewUrl;
+                    showMiniAlert('✅ تم استخراج رابط التقييم تلقائياً', 'success');
+                    return;
+                }
+                
+                // إذا كان الرابط يحتوي على "review" بالفعل، اتركه كما هو
+                if (expandedUrl.includes('writereview') || expandedUrl.includes('/review')) {
+                    inputElement.value = expandedUrl;
+                    return;
+                }
+                
+            } catch(e) {
+                console.error('Error extracting review URL:', e);
+            }
+        }
+        
+        window.extractGoogleReviewUrl = extractGoogleReviewUrl;
+        
+        function toggleTabUrlField(selectElement) {
             const tabItem = selectElement.closest('.gpm-tab-item');
             if (!tabItem) return;
             
@@ -9524,7 +12372,10 @@ function renderMaintenanceCards() {
                     if (urlInput) urlInput.value = '';
                 }
             }
-        };
+        }
+        
+        // ✅ تعريف toggleTabUrlField في window قبل استخدامها
+        window.toggleTabUrlField = toggleTabUrlField;
         
         function getFNBItems() {
             // جمع عناصر F&B من الواجهة
@@ -9543,27 +12394,35 @@ function renderMaintenanceCards() {
             const container = document.getElementById('gpm-tabs-list');
             if (!container) return;
             
+            // ✅ التبويبات الافتراضية - إجبارية (لا يمكن تعديل محتواها)
             const defaultTabs = [
-                { id: 'cleaning', title: '🧹 تنظيف الغرفة', icon: '🧹', type: 'form', visible: true, order: 1 },
-                { id: 'checkout', title: '🧳 طلب حامل حقائب للمغادرة', icon: '🧳', type: 'checkout', visible: true, order: 2 },
-                { id: 'requests', title: '🧴 طلبات تجهيز (شامبو، صابون…)', icon: '🧴', type: 'form', visible: true, order: 3 },
-                { id: 'maintenance', title: '🛠️ الدعم الفني والصيانة الطارئة', icon: '🛠️', type: 'form', visible: true, order: 4 },
-                { id: 'fnb', title: '🍽️ ضيافة الطعام', icon: '🍽️', type: 'fnb', visible: true, order: 5 },
-                { id: 'food', title: '🍕 طلبات المأكولات', icon: '🍕', type: 'whatsapp', visible: true, order: 6 },
-                { id: 'offers', title: '🎁 عروض حصرية', icon: '🎁', type: 'link', visible: true, order: 7 },
-                { id: 'review', title: '⭐ شارك تجربتك', icon: '⭐', type: 'link', visible: true, order: 8 },
-                { id: 'contact', title: '💬 تواصل مباشر', icon: '💬', type: 'whatsapp', visible: true, order: 9 }
+                { id: 'cleaning', title: '🧹 تنظيف الغرفة', icon: '🧹', type: 'form', visible: true, order: 1, isDefault: true },
+                { id: 'checkout', title: '🧳 طلب حامل حقائب للمغادرة', icon: '🧳', type: 'checkout', visible: true, order: 2, isDefault: true },
+                { id: 'requests', title: '🧴 طلبات تجهيز (شامبو، صابون…)', icon: '🧴', type: 'form', visible: true, order: 3, isDefault: true },
+                { id: 'maintenance', title: '🛠️ الدعم الفني والصيانة الطارئة', icon: '🛠️', type: 'form', visible: true, order: 4, isDefault: true },
+                { id: 'fnb', title: '🍽️ ضيافة الطعام', icon: '🍽️', type: 'fnb', visible: true, order: 5, isDefault: true },
+                { id: 'food', title: '🍕 طلبات المأكولات', icon: '🍕', type: 'whatsapp', visible: true, order: 6, isDefault: true, needsUrl: true },
+                { id: 'offers', title: '🎁 عروض حصرية', icon: '🎁', type: 'link', visible: true, order: 7, isDefault: true, needsUrl: true },
+                { id: 'review', title: '⭐ شارك تجربتك', icon: '⭐', type: 'link', visible: true, order: 8, isDefault: true, needsUrl: true },
+                { id: 'contact', title: '💬 تواصل مباشر', icon: '💬', type: 'whatsapp', visible: true, order: 9, isDefault: true, needsUrl: true }
             ];
             
+            // ✅ تحميل الإعدادات المحفوظة (visible, url, title)
             try {
                 const saved = localStorage.getItem('HOTEL_GUEST_CONFIG');
                 if (saved) {
                     const config = JSON.parse(saved);
-                    if (config.tabs && config.tabs.length > 0) {
-                        defaultTabs.forEach((tab, index) => {
-                            const savedTab = config.tabs.find(t => t.id === tab.id);
+                    if (config.guestTabs && config.guestTabs.length > 0) {
+                        defaultTabs.forEach((tab) => {
+                            const savedTab = config.guestTabs.find(t => t.id === tab.id);
                             if (savedTab) {
-                                Object.assign(tab, savedTab);
+                                tab.visible = savedTab.visible !== false;
+                                if (savedTab.title) {
+                                    tab.title = savedTab.title; // ✅ السماح بتعديل العنوان
+                                }
+                                if (tab.needsUrl && savedTab.url) {
+                                    tab.url = savedTab.url;
+                                }
                             }
                         });
                     }
@@ -9572,35 +12431,41 @@ function renderMaintenanceCards() {
                 console.error('Error loading tabs:', e);
             }
             
-            container.innerHTML = defaultTabs.map((tab, index) => `
-                <div class="gpm-tab-item" data-tab-id="${tab.id}" data-order="${tab.order || index + 1}" style="background: var(--bg-card); padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 2px solid var(--border-color);">
-                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-                        <input type="text" class="gpm-tab-icon" value="${tab.icon}" style="width: 50px; text-align: center; font-size: 1.5rem; padding: 8px; border-radius: 8px; border: 2px solid var(--border-color);">
-                        <input type="text" class="gpm-tab-title" value="${tab.title}" style="flex: 1; padding: 10px; border-radius: 8px; border: 2px solid var(--border-color);">
-                        <select class="gpm-tab-type" onchange="toggleTabUrlField(this)" style="padding: 10px; border-radius: 8px; border: 2px solid var(--border-color);">
-                            <option value="form" ${tab.type === 'form' ? 'selected' : ''}>نموذج</option>
-                            <option value="checkout" ${tab.type === 'checkout' ? 'selected' : ''}>تسجيل خروج</option>
-                            <option value="fnb" ${tab.type === 'fnb' ? 'selected' : ''}>أغذية ومشروبات</option>
-                            <option value="link" ${tab.type === 'link' ? 'selected' : ''}>رابط</option>
-                            <option value="whatsapp" ${tab.type === 'whatsapp' ? 'selected' : ''}>واتساب</option>
-                        </select>
-                        <label class="switch">
+            container.innerHTML = defaultTabs.map((tab) => {
+                const needsUrl = tab.needsUrl || tab.type === 'link' || tab.type === 'whatsapp';
+                const isReviewTab = tab.id === 'review';
+                return `
+                <div class="gpm-tab-item" data-tab-id="${tab.id}" data-order="${tab.order}" style="background: var(--bg-card); padding: 15px; border-radius: 12px; margin-bottom: 10px; border: 2px solid var(--border-color);">
+                    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                        <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;">
+                            <span style="font-size: 1.5rem; width: 40px; text-align: center;">${tab.icon}</span>
+                            <span class="gpm-tab-title-display" style="flex: 1; padding: 8px 12px; font-size: 0.95rem; font-weight: 600; color: var(--text-main); user-select: none;">${tab.title}</span>
+                            <input type="text" class="gpm-tab-title-input" value="${tab.title}" 
+                                   style="display: none; flex: 1; padding: 8px 12px; border-radius: 8px; border: 2px solid var(--primary); font-size: 0.95rem; font-weight: 600; color: var(--text-main); background: white;"
+                                   placeholder="اسم التبويب">
+                            <button onclick="editTabTitle('${tab.id}')" class="glass-btn" 
+                                    style="padding: 6px 10px; font-size: 0.9rem; background: rgba(59,130,246,0.1); color: var(--primary); border: 1px solid rgba(59,130,246,0.3); border-radius: 6px; cursor: pointer; transition: all 0.2s;"
+                                    onmouseover="this.style.background='rgba(59,130,246,0.2)'; this.style.transform='scale(1.1)';"
+                                    onmouseout="this.style.background='rgba(59,130,246,0.1)'; this.style.transform='scale(1)';"
+                                    title="تعديل اسم التبويب">
+                                ✏️
+                            </button>
+                        </div>
+                        <label class="switch" style="margin: 0;">
                             <input type="checkbox" class="gpm-tab-visible" ${tab.visible ? 'checked' : ''}>
                             <span class="slider"></span>
                         </label>
-                        <button onclick="removeTab('${tab.id}')" class="glass-btn" style="background: var(--danger); color: white; padding: 8px 12px;">🗑️</button>
+                        ${needsUrl ? `
+                        <input type="text" class="gpm-tab-url" value="${tab.url || ''}" 
+                               placeholder="${tab.type === 'whatsapp' ? 'مثال: 966570707121 أو https://wa.me/966570707121' : isReviewTab ? 'رابط خرائط جوجل (سيتم استخراج رابط التقييم تلقائياً)' : 'رابط التبويب'}" 
+                               style="flex: 1; min-width: 200px; padding: 10px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.9rem;"
+                               ${isReviewTab ? 'onblur="extractGoogleReviewUrl(this)"' : ''}>
+                        ` : ''}
                     </div>
-                    <div class="gpm-tab-url-container" style="display: ${(tab.type === 'link' || tab.type === 'whatsapp') ? 'block' : 'none'}; margin-top: 10px;">
-                        <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; color: var(--text-main);">🔗 ${tab.type === 'whatsapp' ? 'رقم واتساب أو رابط' : 'رابط التبويب'}</label>
-                        <input type="text" class="gpm-tab-url" value="${tab.url || ''}" placeholder="${tab.type === 'whatsapp' ? 'مثال: 966501234567 أو https://wa.me/966501234567' : 'مثال: https://example.com'}" style="width: 100%; padding: 10px; border-radius: 8px; border: 2px solid var(--border-color); font-size: 0.9rem;">
                     </div>
-                </div>
-            `).join('');
+            `;
+            }).join('');
             
-            // تهيئة حقول URL للتبويبات الموجودة
-            container.querySelectorAll('.gpm-tab-type').forEach(select => {
-                toggleTabUrlField(select);
-            });
         }
         
         function addNewTab() {
@@ -9648,6 +12513,13 @@ function renderMaintenanceCards() {
         }
         
         function removeTab(tabId) {
+            // ✅ منع حذف التبويبات الافتراضية
+            const defaultTabIds = ['cleaning', 'checkout', 'requests', 'maintenance', 'fnb', 'food', 'offers', 'review', 'contact'];
+            if (defaultTabIds.includes(tabId)) {
+                showMiniAlert('⚠️ لا يمكن حذف التبويبات الافتراضية', 'warning');
+                return;
+            }
+            
             const item = document.querySelector(`.gpm-tab-item[data-tab-id="${tabId}"]`);
             if (item) {
                 item.remove();
@@ -9726,11 +12598,64 @@ function renderMaintenanceCards() {
         }
         
         function previewGuestPortal() {
-            const room = prompt('أدخل رقم غرفة للمعاينة:', '101');
-            if (room) {
+            // استخدام رقم غرفة من QR إذا كان موجوداً، وإلا استخدام افتراضي
+            const qrFrom = document.getElementById('gpm-qr-from');
+            const room = qrFrom && qrFrom.value ? qrFrom.value : '101';
                 window.open(`guest.html?room=${room}&preview=true`, '_blank');
             }
+        
+        // ✅ معاينة صفحة النزيل مع الإعدادات الحالية (قبل الحفظ)
+        async function previewGuestPortalWithCurrentSettings() {
+            try {
+                // حفظ الإعدادات مؤقتاً في localStorage للمعاينة
+                const tempConfig = {
+                    siteTitle: document.getElementById('gpm-title').value || 'بوابة النزيل',
+                    guestHeaderTitle: document.getElementById('gpm-title').value || 'أهلاً بك',
+                    guestHeaderSubtitle: document.getElementById('gpm-subtitle').value || 'خدمة الغرفة السريعة',
+                    logoUrl: document.getElementById('gpm-logo').value || '',
+                    theme: {
+                        primaryColor: document.getElementById('gpm-primary-color').value || '#00ACC1',
+                        accentColor: '#F0F4FF',
+                        bgColor: document.getElementById('gpm-bg-color').value || '#E3E8FF',
+                        bgImage: document.getElementById('gpm-bg-image').value || '',
+                        textColor: '#1E293B',
+                        themeType: document.getElementById('gpm-theme').value || 'light'
+                    },
+                    guestTabs: getTabsConfig(),
+                    quickWhatsapp: document.getElementById('gpm-whatsapp-manager').value || '',
+                    googleReviewUrl: document.getElementById('gpm-google-review').value || '',
+                    kitchenWhatsapp: document.getElementById('gpm-whatsapp-kitchen').value || '',
+                    receptionPhone: document.getElementById('gpm-reception-phone').value || '',
+                    welcomeMessage: document.getElementById('gpm-welcome-message').value || '',
+                    fnbItems: getFNBItems()
+                };
+                
+                // حفظ مؤقت في localStorage
+                const originalConfig = localStorage.getItem('HOTEL_GUEST_CONFIG');
+                localStorage.setItem('HOTEL_GUEST_CONFIG', JSON.stringify(tempConfig));
+                
+                // فتح صفحة النزيل
+                const qrFrom = document.getElementById('gpm-qr-from');
+                const room = qrFrom && qrFrom.value ? qrFrom.value : '101';
+                const previewWindow = window.open(`guest.html?room=${room}&preview=true`, '_blank');
+                
+                // استعادة الإعدادات الأصلية بعد 2 ثانية (لكي تظهر المعاينة)
+                setTimeout(() => {
+                    if (originalConfig) {
+                        localStorage.setItem('HOTEL_GUEST_CONFIG', originalConfig);
+                    } else {
+                        localStorage.removeItem('HOTEL_GUEST_CONFIG');
+                    }
+                }, 2000);
+                
+                showMiniAlert('✅ تم فتح صفحة المعاينة', 'success');
+            } catch(e) {
+                console.error('Error previewing guest portal:', e);
+                showMiniAlert('❌ فشل فتح المعاينة', 'error');
+            }
         }
+        
+        window.previewGuestPortalWithCurrentSettings = previewGuestPortalWithCurrentSettings;
         
         // تصدير الدوال للاستخدام العام
         window.showGuestPortalManager = showGuestPortalManager;
@@ -9841,6 +12766,245 @@ function renderMaintenanceCards() {
             }
         }
         window.toggleAutoSendWhatsApp = toggleAutoSendWhatsApp;
+        
+        // ===============================================
+        // == معالجة الطلبات الطارئة ====================
+        // ===============================================
+        
+        // ✅ دالة تلبية طلب طارئ
+        async function handleEmergencyRequest(requestId, type = 'request') {
+            hapticFeedback('medium');
+            
+            let request = null;
+            let collectionName = '';
+            
+            if (type === 'maintenance') {
+                request = appState.activeMaintenance.find(m => m.id === requestId);
+                collectionName = 'activeMaintenance';
+            } else {
+                request = appState.guestRequests.find(r => r.id === requestId);
+                collectionName = 'guestRequests';
+            }
+            
+            if (!request) {
+                showMiniAlert('⚠️ الطلب غير موجود', 'error');
+                return;
+            }
+            
+            // ✅ تغيير حالة الطلب إلى "جاري العمل على حل أمر طارئ"
+            const updateData = {
+                status: 'in-progress',
+                emergencyStatus: 'handling',
+                emergencyHandledAt: Date.now(),
+                emergencyHandledBy: 'staff' // يمكن إضافة اسم الموظف لاحقاً
+            };
+            
+            try {
+                if (db) {
+                    await db.collection(collectionName).doc(requestId).update(updateData);
+                    
+                    // تحديث الحالة المحلية
+                    if (type === 'maintenance') {
+                        const index = appState.activeMaintenance.findIndex(m => m.id === requestId);
+                        if (index !== -1) {
+                            appState.activeMaintenance[index] = { ...appState.activeMaintenance[index], ...updateData };
+                        }
+                    } else {
+                        const index = appState.guestRequests.findIndex(r => r.id === requestId);
+                        if (index !== -1) {
+                            appState.guestRequests[index] = { ...appState.guestRequests[index], ...updateData };
+                        }
+                    }
+                    
+                    // ✅ فتح واتساب برسالة طارئة
+                    const saved = localStorage.getItem('HOTEL_GUEST_CONFIG');
+                    if (saved) {
+                        const config = JSON.parse(saved);
+                        const whatsappNumber = config.quickWhatsapp || config.receptionPhone || '';
+                        
+                        if (whatsappNumber) {
+                            // استخراج الرقم من الرابط إذا كان رابط واتساب
+                            let phone = whatsappNumber;
+                            if (phone.includes('wa.me/') || phone.includes('whatsapp.com')) {
+                                const match = phone.match(/(?:wa\.me\/|whatsapp\.com\/send\?phone=)(\d+)/);
+                                if (match) {
+                                    phone = match[1];
+                                }
+                            }
+                            
+                            // تنظيف الرقم (إزالة أي رموز غير رقمية)
+                            phone = phone.replace(/[^0-9]/g, '');
+                            
+                            if (phone) {
+                                const requestType = type === 'maintenance' ? 'صيانة' : (request.requestType === 'cleaning' ? 'نظافة' : 'طلب');
+                                const requestDetails = type === 'maintenance' ? (request.maintDesc || 'صيانة') : (request.details || 'طلب');
+                                
+                                const whatsappMessage = 
+                                    `🚨 *عاجل*\n\n` +
+                                    `النزيل يطلب ${requestType}:\n` +
+                                    `🔢 الغرفة: ${request.num}\n` +
+                                    `📝 التفاصيل: ${requestDetails}\n\n` +
+                                    `⏰ العامل غير متوفر لانتهاء وقت الدوام الرسمي.\n` +
+                                    `الرجاء الاهتمام بالأمر 🙏`;
+                                
+                                const whatsappUrl = `https://wa.me/${phone}?text=${encodeURIComponent(whatsappMessage)}`;
+                                window.open(whatsappUrl, '_blank');
+                            }
+                        }
+                    }
+                    
+                    showMiniAlert('✅ تم تلبية الطلب الطارئ وفتح واتساب', 'success');
+                    playNotificationSound();
+                    
+                    // إعادة رسم الأقسام
+                    if (type === 'maintenance') {
+                        renderMaintenanceCards();
+                    } else {
+                        renderGuestRequests();
+                    }
+                }
+            } catch (error) {
+                console.error('Error handling emergency request:', error);
+                showMiniAlert('❌ فشل تحديث حالة الطلب', 'error');
+            }
+        }
+        
+        // ✅ دالة جدولة طلب طارئ
+        async function scheduleEmergencyRequest(requestId, type = 'request') {
+            hapticFeedback('medium');
+            
+            let request = null;
+            let collectionName = '';
+            
+            if (type === 'maintenance') {
+                request = appState.activeMaintenance.find(m => m.id === requestId);
+                collectionName = 'activeMaintenance';
+            } else {
+                request = appState.guestRequests.find(r => r.id === requestId);
+                collectionName = 'guestRequests';
+            }
+            
+            if (!request) {
+                showMiniAlert('⚠️ الطلب غير موجود', 'error');
+                return;
+            }
+            
+            // ✅ جلب أوقات العمل من الإعدادات
+            const saved = localStorage.getItem('HOTEL_GUEST_CONFIG');
+            if (!saved) {
+                showMiniAlert('⚠️ لا توجد إعدادات محفوظة', 'error');
+                return;
+            }
+            
+            const config = JSON.parse(saved);
+            const cooldowns = config.requestCooldowns || {};
+            
+            let scheduledTime = null;
+            let scheduledTimeString = '';
+            
+            if (type === 'maintenance') {
+                const fromTime = cooldowns.maintenanceFrom || '08:00';
+                const [hours, minutes] = fromTime.split(':').map(Number);
+                scheduledTime = new Date();
+                scheduledTime.setHours(hours, minutes, 0, 0);
+                
+                // إذا كان الوقت في الماضي، نضيف يوم
+                if (scheduledTime < new Date()) {
+                    scheduledTime.setDate(scheduledTime.getDate() + 1);
+                }
+                
+                scheduledTimeString = scheduledTime.toLocaleString('ar-EG', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            } else if (request.requestType === 'cleaning') {
+                const fromTime = cooldowns.cleaningFrom || '08:00';
+                const [hours, minutes] = fromTime.split(':').map(Number);
+                scheduledTime = new Date();
+                scheduledTime.setHours(hours, minutes, 0, 0);
+                
+                // إذا كان الوقت في الماضي، نضيف يوم
+                if (scheduledTime < new Date()) {
+                    scheduledTime.setDate(scheduledTime.getDate() + 1);
+                }
+                
+                scheduledTimeString = scheduledTime.toLocaleString('ar-EG', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            } else {
+                const fromTime = cooldowns.requestsFrom || '08:00';
+                const [hours, minutes] = fromTime.split(':').map(Number);
+                scheduledTime = new Date();
+                scheduledTime.setHours(hours, minutes, 0, 0);
+                
+                // إذا كان الوقت في الماضي، نضيف يوم
+                if (scheduledTime < new Date()) {
+                    scheduledTime.setDate(scheduledTime.getDate() + 1);
+                }
+                
+                scheduledTimeString = scheduledTime.toLocaleString('ar-EG', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            }
+            
+            const updateData = {
+                status: 'scheduled',
+                schedTime: scheduledTimeString,
+                schedTimestamp: scheduledTime.getTime(),
+                isEmergency: false, // إزالة علامة الطارئ بعد الجدولة
+                emergencyScheduledAt: Date.now()
+            };
+            
+            try {
+                if (db) {
+                    await db.collection(collectionName).doc(requestId).update(updateData);
+                    
+                    // تحديث الحالة المحلية
+                    if (type === 'maintenance') {
+                        const index = appState.activeMaintenance.findIndex(m => m.id === requestId);
+                        if (index !== -1) {
+                            appState.activeMaintenance[index] = { ...appState.activeMaintenance[index], ...updateData };
+                        }
+                    } else {
+                        const index = appState.guestRequests.findIndex(r => r.id === requestId);
+                        if (index !== -1) {
+                            appState.guestRequests[index] = { ...appState.guestRequests[index], ...updateData };
+                        }
+                    }
+                    
+                    showMiniAlert(`✅ تم جدولة الطلب الطارئ في ${scheduledTimeString}`, 'success');
+                    playNotificationSound();
+                    
+                    // إعادة رسم الأقسام
+                    if (type === 'maintenance') {
+                        renderMaintenanceCards();
+                    } else {
+                        renderGuestRequests();
+                    }
+                }
+            } catch (error) {
+                console.error('Error scheduling emergency request:', error);
+                showMiniAlert('❌ فشل جدولة الطلب', 'error');
+            }
+        }
+        
+        // تصدير الدوال
+        window.handleEmergencyRequest = handleEmergencyRequest;
+        window.scheduleEmergencyRequest = scheduleEmergencyRequest;
         
         // دالة حذف كل البيانات
         function showClearAllDataModal() {

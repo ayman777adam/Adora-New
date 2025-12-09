@@ -17,6 +17,8 @@
     
     let db = null;
     let currentRoom = null;
+    let geolocationPermissionGranted = false; // ✅ متغير لتخزين حالة الإذن
+    let geolocationPermissionChecked = false; // ✅ متغير لتتبع ما إذا تم التحقق من الإذن
     
     // ============================================
     // == Initialize Firebase ====================
@@ -163,6 +165,48 @@
     // == Geolocation Check =======================
     // ============================================
     
+    // ✅ التحقق من إذن الموقع مرة واحدة فقط في صفحة الدخول
+    function checkGeolocationPermissionOnce() {
+        if (geolocationPermissionChecked) {
+            return Promise.resolve(geolocationPermissionGranted);
+        }
+        
+        return new Promise((resolve) => {
+            if (!navigator.geolocation) {
+                geolocationPermissionChecked = true;
+                geolocationPermissionGranted = false;
+                resolve(false);
+                return;
+            }
+            
+            // التحقق من حالة الإذن مرة واحدة فقط
+            if (navigator.permissions && navigator.permissions.query) {
+                navigator.permissions.query({ name: 'geolocation' }).then(result => {
+                    geolocationPermissionGranted = result.state === 'granted';
+                    geolocationPermissionChecked = true;
+                    
+                    // الاستماع لتغييرات حالة الإذن
+                    if (result.onchange) {
+                        result.onchange = () => {
+                            geolocationPermissionGranted = result.state === 'granted';
+                        };
+                    }
+                    
+                    resolve(geolocationPermissionGranted);
+                }).catch(() => {
+                    geolocationPermissionChecked = true;
+                    geolocationPermissionGranted = false;
+                    resolve(false);
+                });
+            } else {
+                // Fallback: إذا لم يكن permissions API متاحاً، نفترض أن الإذن غير ممنوح
+                geolocationPermissionChecked = true;
+                geolocationPermissionGranted = false;
+                resolve(false);
+            }
+        });
+    }
+    
     function getCurrentLocation() {
         return new Promise((resolve, reject) => {
             if (!navigator.geolocation) {
@@ -170,69 +214,27 @@
                 return;
             }
             
-            // التحقق من حالة الإذن أولاً
-            if (navigator.permissions && navigator.permissions.query) {
-                navigator.permissions.query({ name: 'geolocation' }).then(result => {
-                    // إذا كان الإذن ممنوحاً، استخدم maximumAge لتجنب طلب الإذن مرة أخرى
-                    const options = {
-                        enableHighAccuracy: false, // تقليل الدقة لتسريع العملية
-                        timeout: 5000, // تقليل timeout إلى 5 ثواني
-                        maximumAge: result.state === 'granted' ? 300000 : 0 // استخدام cache لمدة 5 دقائق إذا كان الإذن ممنوحاً
-                    };
-                    
-                    navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                            resolve({
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude,
-                                accuracy: position.coords.accuracy
-                            });
-                        },
-                        (error) => {
-                            reject(error);
-                        },
-                        options
-                    );
-                }).catch(() => {
-                    // Fallback: إذا فشل التحقق من الإذن، استخدم الإعدادات الافتراضية
-                    navigator.geolocation.getCurrentPosition(
-                        (position) => {
-                            resolve({
-                                lat: position.coords.latitude,
-                                lng: position.coords.longitude,
-                                accuracy: position.coords.accuracy
-                            });
-                        },
-                        (error) => {
-                            reject(error);
-                        },
-                        {
-                            enableHighAccuracy: false, // تقليل الدقة لتسريع العملية
-                            timeout: 5000, // تقليل timeout إلى 5 ثواني
-                            maximumAge: 300000 // استخدام cache لمدة 5 دقائق
-                        }
-                    );
-                });
-            } else {
-                // Fallback للمتصفحات التي لا تدعم permissions API
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        resolve({
-                            lat: position.coords.latitude,
-                            lng: position.coords.longitude,
-                            accuracy: position.coords.accuracy
-                        });
-                    },
-                    (error) => {
-                        reject(error);
-                    },
-                    {
-                        enableHighAccuracy: false, // تقليل الدقة لتسريع العملية
-                        timeout: 5000, // تقليل timeout إلى 5 ثواني
-                        maximumAge: 300000 // استخدام cache لمدة 5 دقائق
-                    }
-                );
-            }
+            // ✅ استخدام حالة الإذن المحفوظة لتجنب طلب الإذن مرة أخرى
+            const options = {
+                enableHighAccuracy: false,
+                timeout: 5000,
+                // ✅ إذا كان الإذن ممنوحاً، استخدم maximumAge كبير جداً لتجنب طلب الإذن
+                maximumAge: geolocationPermissionGranted ? 86400000 : 0 // 24 ساعة إذا كان الإذن ممنوحاً
+            };
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy
+                    });
+                },
+                (error) => {
+                    reject(error);
+                },
+                options
+            );
         });
     }
     
@@ -392,6 +394,9 @@
     
     // Get room from URL
     currentRoom = urlParams.get('room') || '--';
+    
+    // ✅ تصدير دالة التحقق من الإذن للاستخدام في صفحة الدخول
+    window.checkGeolocationPermissionOnce = checkGeolocationPermissionOnce;
     
 })();
 
