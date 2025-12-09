@@ -3486,60 +3486,36 @@ async function showRoomQuickInfo(id) {
         
         window.showRequestDetails = showRequestDetails;
 
-
 function renderGuestRequests() {
-    // تعديل: استبعاد طلبات النظافة تماماً من هذه القائمة لأنها تظهر في قسم تتبع الغرف
-    const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType !== 'cleaning');
-    
-    // تصحيح: هذا هو التعريف الوحيد والصحيح للمتغير (تم حذف التكرار)
-    const scheduledReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType !== 'cleaning');
-    
+    // فصل طلبات النظافة (roomTracking = true) عن باقي الطلبات
+    const activeReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && (!r.roomTracking || r.requestType !== 'cleaning'));
+    const scheduledReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && (!r.roomTracking || r.requestType !== 'cleaning'));
     const archiveReqs = appState.guestRequestsLog || [];
     
-    // سيتم عرضها في قسم تتبع الغرف - طلبات النظافة (cleaning)
+    // طلبات النظافة (cleaning) - سيتم عرضها في قسم تتبع الغرف
     const activeCleaningReqs = appState.guestRequests.filter(r => r.status !== 'scheduled' && r.status !== 'completed' && r.requestType === 'cleaning' && r.roomTracking);
+    const scheduledCleaningReqs = appState.guestRequests.filter(r => r.status === 'scheduled' && r.requestType === 'cleaning' && r.roomTracking);
+
     const requestSection = document.getElementById('guest-requests-section');
     const archiveContainer = document.getElementById('req-archive-container');
 
     const isArchiveOpen = (appState.isArchiveView && appState.isArchiveView.req) === true;
 
-    // إظهار القسم دائماً
-    if (requestSection) requestSection.style.display = 'block';
+            // إظهار القسم دائماً
+        if (requestSection) requestSection.style.display = 'block';
 
     // عرض الطلبات النشطة
     const activeList = document.getElementById('guest-requests-active-list');
     if (activeList) {
-        if (activeReqs.length === 0 && scheduledReqs.length === 0) {
-            // لا توجد عمليات نشطة
-            activeList.innerHTML = `<div style="text-align:center; padding:8px; color:var(--text-sec); font-size:0.85rem;"><span>${t('noActiveRequests')}</span></div>`;
-        } else {
-            activeList.innerHTML = activeReqs.length ?
-                activeReqs.map(req => createRequestCard(req)).join('') :
-                `<p class="no-data">${t('noActiveRequests')}</p>`;
-        }
+                if (activeReqs.length === 0 && scheduledReqs.length === 0) {
+                    // لا توجد عمليات نشطة
+                    activeList.innerHTML = `<div style="text-align:center; padding:8px; color:var(--text-sec); font-size:0.85rem;"><span>${t('noActiveRequests')}</span></div>`;
+                } else {
+        activeList.innerHTML = activeReqs.length ?
+            activeReqs.map(req => createRequestCard(req)).join('') :
+                        `<p class="no-data">${t('noActiveRequests')}</p>`;
+                }
     }
-
-    // عرض الطلبات المجدولة
-    const schedContainer = document.getElementById('scheduled-requests-container');
-    if (schedContainer) {
-        if (scheduledReqs.length) {
-            schedContainer.style.display = 'block';
-            schedContainer.innerHTML =
-                `<div class="section-title">📅 ${t('scheduledRequests')}</div>` +
-                scheduledReqs.map(req => createRequestCard(req)).join('');
-        } else {
-            schedContainer.style.display = 'none';
-        }
-    }
-
-    // ظهور / إخفاء الأرشيف
-    if (archiveContainer) {
-        archiveContainer.style.display = isArchiveOpen ? 'block' : 'none';
-        if (isArchiveOpen && typeof renderGuestRequestsArchive === 'function') {
-            renderGuestRequestsArchive();
-        }
-    }
-}
 
     // عرض الطلبات المجدولة
     const schedContainer = document.getElementById('scheduled-requests-container');
